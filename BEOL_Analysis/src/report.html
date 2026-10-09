@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEOL 分析戰報</title>
+<!--INLINE:report/report.css-->
+</head>
+<body>
+<header class="top">
+  <div class="brand"><b>BEOL 分析戰報</b><span>Cu interconnect · BSL vs CIP</span><em id="ver"></em></div>
+  <nav class="mods" id="mods"><button data-mod="wat" class="on">WAT</button><button data-mod="inline">Inline</button><button data-mod="yield" disabled>Yield</button></nav>
+  <label class="btn primary file-btn">匯入 Excel／CSV<input type="file" id="file" accept=".xlsx,.xls,.xlsm,.csv" hidden><input type="file" id="kbFile" accept=".json,.xlsx,.xls,.csv" hidden><input type="file" id="file2" accept=".xlsx,.xls,.xlsm,.csv" hidden></label>
+  <span class="file-chip" id="fileChip">尚未匯入資料</span>
+  <button class="btn" id="btnLink" disabled title="再匯入一個檔案（機台履歷、yield…），以 wafer id 連到目前資料">＋ 連結資料</button>
+  <span class="spacer"></span>
+  <button class="btn" id="btnCopy" disabled title="把結論文字複製到剪貼簿，方便貼到 mail／chat">複製結論</button>
+  <button class="btn" id="btnPrint" disabled>列印／PDF</button>
+  <button class="btn" id="btnHtml" disabled title="One-page HTML，圖嵌入，可直接寄送">匯出 HTML</button>
+  <button class="btn primary" id="btnPpt" disabled title="PowerPoint：點燈表、HL trend、總覽 trend（WAT＋Inline）">匯出 PPT</button>
+</header>
+<div class="legend-bar" id="legendBar"></div>
+<nav class="tabs" id="tabs">
+  <button data-tab="setup" class="active">⚙ 設定</button>
+  <button data-tab="report" disabled>① 戰報總覽</button>
+  <button data-tab="trend" disabled>② Trend 矩陣</button>
+  <button data-tab="corr" disabled>③ Correlation</button>
+  <button data-tab="kb">④ 知識庫</button>
+</nav>
+<main>
+  <section id="tab-setup" class="tab active"><div id="setup"></div></section>
+  <section id="tab-report" class="tab"><div id="report" class="report"></div></section>
+  <section id="tab-trend" class="tab"><div id="trend"></div></section>
+  <section id="tab-corr" class="tab"><div id="corr"></div></section>
+  <section id="tab-kb" class="tab"><div id="kb"></div></section>
+</main>
+<div class="busy" id="busy" hidden></div>
+<div id="toasts"></div>
+<!--INLINE:../vendor/xlsx.full.min.js-->
+<!--INLINE:../vendor/plotly.min.js-->
+<!--INLINE:../vendor/pptxgen.bundle.js-->
+<!--INLINE:js/core.js-->
+<!--INLINE:js/importer.js-->
+<!--INLINE:js/transform.js-->
+<!--INLINE:js/stats.js-->
+<!--INLINE:report/rules_base.js-->
+<!--INLINE:report/rules.js-->
+<!--INLINE:report/engine.js-->
+<!--INLINE:report/app.js-->
+</body>
+</html>
