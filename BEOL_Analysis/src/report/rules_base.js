@@ -11,7 +11,7 @@
  */
 window.App = window.App || {};
 window.App.RULES_BASE = {
-  version: '2.7', date: '2026-10-11', author: 'base', layer: 'base',
+  version: '2.8', date: '2026-10-12', author: 'base', layer: 'base',
   rules: [
     { id: 'rs', label: 'Rs（金屬線阻值）', kind: 'wat', metric: 'k', bad: 'up',
       name: 'con_*;con-*;rs_*;rs-*;rsh_*;rsq_*;sheet_*;r_m#*;rm#*;*serp*', unit: 'ohm/sq;Ω/sq;ohm/□',
@@ -109,9 +109,18 @@ window.App.RULES_BASE = {
       up_checks: ['同組 WAT 戰報', 'Wafer map 空間特徵', '缺陷掃描'],
       down_mean: '失效比例下降', down_causes: ['製程條件改善'], down_checks: ['確認對應 WAT 是否同步改善'],
       pairs: '', source: '' },
-    { id: 'other', label: '其他', kind: 'wat', metric: 'k', bad: '', name: '', unit: '',
+    // ------------------------------------------------------------ 其他：分不出類別、或是 range／σ／max 這類衍生統計欄（仍點燈，但不參與同層／跨層配對）
+    { id: 'other', label: '其他（WAT）', kind: 'wat', metric: 'k', bad: '', name: '', unit: '',
       up_mean: '偏高', up_causes: [], up_checks: ['相關製程 inline 數據', 'Tool commonality'],
       down_mean: '偏低', down_causes: [], down_checks: ['相關製程 inline 數據', 'Tool commonality'],
+      pairs: '', source: '' },
+    { id: 'other_inline', label: '其他（inline：range／σ／衍生統計）', kind: 'inline', metric: 'k', bad: '', name: '', unit: '',
+      up_mean: '偏高', up_causes: [], up_checks: ['對應的均值 item', 'Tool commonality'],
+      down_mean: '偏低', down_causes: [], down_checks: ['對應的均值 item', 'Tool commonality'],
+      pairs: '', source: '' },
+    { id: 'other_yield', label: '其他（yield）', kind: 'yield', metric: 'k', bad: '', name: '', unit: '',
+      up_mean: '偏高', up_causes: [], up_checks: ['同組 WAT 戰報'],
+      down_mean: '偏低', down_causes: [], down_checks: ['同組 WAT 戰報'],
       pairs: '', source: '' },
   ],
 };

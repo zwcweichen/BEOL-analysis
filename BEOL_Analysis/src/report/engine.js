@@ -227,8 +227,10 @@
       const cell = cells[it.name][g][c];
       const score = cell.metric === 'fold' ? Math.abs(Math.log2(cell.fold || 1)) * 2 : cell.metric === 'rate' ? Math.abs(cell.diff || 0) / 3 : Math.abs(cell.k || 0);
       if (it.kind === 'wat' && isAbn(cell.level)) {
-        const rel = RU().relatedInline(it.name, it.cat, items).map((r) => ({ ...r, k: cells[r.item.name]?.[g]?.[c]?.k }));
-        const xrel = (RU().relatedXLayer ? RU().relatedXLayer(it.name, it.cat, items) : []).map((r) => ({ ...r, k: cells[r.item.name]?.[g]?.[c]?.k }));
+        // r per wafer; not meaningful for a pass／fail rate item (SPA): leave null → judged by K only
+        const rr = (name) => (RU().metricOf(it.cat) === 'rate' ? null : E.pearson(byG.get(g) || [], it.name, name, RU().metricOf(it.cat) === 'fold'));
+        const rel = RU().relatedInline(it.name, it.cat, items).map((r) => ({ ...r, k: cells[r.item.name]?.[g]?.[c]?.k, r: rr(r.item.name) }));
+        const xrel = (RU().relatedXLayer ? RU().relatedXLayer(it.name, it.cat, items) : []).map((r) => ({ ...r, k: cells[r.item.name]?.[g]?.[c]?.k, r: rr(r.item.name) }));
         findings.wat.push({ type: 'mean', cell, rel, xrel, score, dx: RU().diagnose(cell, rel, xrel) });
       }
       if (it.kind === 'yield' && isAbn(cell.level)) {
@@ -427,6 +429,18 @@
   };
 
   /** plain-text summary (for e-mail / chat) for one module */
+  /** Pearson r between two columns over rows (both numeric; y optionally log10 for LK-type items); null when n < 4 */
+  E.pearson = (rows, y, x, logY = false) => {
+    let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    for (const q of rows) {
+      let a = num(q[x]), b = num(q[y]); if (a == null || b == null) continue;
+      if (logY) { if (b <= 0) continue; b = Math.log10(b); }
+      n++; sx += a; sy += b; sxx += a * a; syy += b * b; sxy += a * b;
+    }
+    if (n < 4) return null;
+    const d = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+    return d > 0 ? (n * sxy - sx * sy) / d : null;
+  };
   E.summaryText = (res, cfg, meta, mode = 'wat') => {
     const L = [], th = res.th;
     const f4 = (v) => (typeof v === 'number' && isFinite(v) ? (Math.abs(v) < 1e-3 && v !== 0 ? v.toExponential(3) : String(+v.toPrecision(4))) : '—');
@@ -449,8 +463,8 @@
       }
       L.push(`   ${f.dx.verdict}`);
       if (meta?.factor) { const fv = meta.factor(f); if (fv) L.push(`   ${fv}`); }
-      if (meta?.causes) { const cz = meta.causes(f); if (cz.length) L.push(`   可能原因（依證據排序）：${cz.join('、')}`); }
-      L.push(`   建議檢查：${f.dx.checks.join('、')}`);
+      L.push(`   建議檢查：${meta?.checks ? meta.checks(f).join('；') : f.dx.checks.join('、')}`);
+      if (meta?.causes) { const cz = meta.causes(f); if (cz.length) L.push(`   物理機制（依證據）：${cz.join('、')}`); }
     });
     const na = res.naList[mode];
     L.push(RU().kbVersion());

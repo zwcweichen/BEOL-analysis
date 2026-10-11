@@ -54,12 +54,12 @@
     for (const o of overlay?.rules || []) {
       const n = { ...R.normRule(o), layer: 'fab' };
       const i = rules.findIndex((r) => r.id === n.id);
-      if (i >= 0) rules[i] = n; else { const j = rules.findIndex((r) => r.id === 'other'); rules.splice(j < 0 ? rules.length : j, 0, n); }
+      if (i >= 0) rules[i] = n; else { const j = rules.findIndex((r) => /^other/.test(r.id)); rules.splice(j < 0 ? rules.length : j, 0, n); }
     }
     R.RULES = rules;
     R.KB = { base: { version: base?.version || '', date: base?.date || '' }, fab: overlay ? { version: overlay.version || '', date: overlay.date || '', author: overlay.author || '', n: (overlay.rules || []).length } : null };
-    R.CATS = rules.filter((r) => r.enabled || r.id === 'other').map(R.compileRule);
-    if (!R.CATS.some((c) => c.id === 'other')) R.CATS.push(R.compileRule({ id: 'other', label: '其他', kind: 'wat' }));
+    R.CATS = rules.filter((r) => r.enabled || /^other/.test(r.id)).map(R.compileRule);
+    for (const [id, label, kind] of [['other', '其他（WAT）', 'wat'], ['other_inline', '其他（inline）', 'inline'], ['other_yield', '其他（yield）', 'yield']]) if (!R.CATS.some((c) => c.id === id)) R.CATS.push(R.compileRule({ id, label, kind }));
     return R.CATS;
   };
   R.kbVersion = () => `知識庫 base v${R.KB?.base.version || '?'}${R.KB?.fab ? `＋fab 層 ${R.KB.fab.n} 條${R.KB.fab.version ? ` v${R.KB.fab.version}` : ''}` : ''}`;
@@ -69,7 +69,7 @@
   R.dryRun = (columns) => {
     const out = {};
     for (const c of R.CATS) out[c.id] = [];
-    for (const col of columns) { const k = R.classify(col); if (k.cat !== 'other') out[k.cat].push({ col, conf: k.conf }); }
+    for (const col of columns) { const k = R.classify(col); if (!/^other/.test(k.cat)) out[k.cat].push({ col, conf: k.conf }); }
     return out;
   };
   R.load(App.RULES_BASE, App.store ? App.store.get('rpt-kb', null) : null);
@@ -102,7 +102,8 @@
       return `${R.parseName(r.item.name).short} 預期${exp > 0 ? '上升' : '下降'} → 目前${mv}`;
     });
     return {
-      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${d.mean}（${cell.text}）`,
+      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${cell.text}`,
+      mean: d.mean,
       cat: cat.label,
       causes: d.causes.map((c) => fill(c, L)),
       checks: d.checks.map((c) => fill(c, L)),
@@ -120,7 +121,8 @@
     (related || []).forEach((r) => { byCat[r.item.cat] = (byCat[r.item.cat] || 0) + 1; });
     const hint = Object.keys(byCat).map((k) => ({ lk: '線間漏電／短路', spa: '線間漏電／短路', vbd: '線間耐壓', rc: 'via 開路或高阻', rs: '金屬線高阻' }[k])).filter(Boolean);
     return {
-      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${d.mean}（${cell.text}）`,
+      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${cell.text}`,
+      mean: d.mean,
       cat: cat.label,
       causes: d.causes.slice(), checks: d.checks.slice(),
       verdict: hit.length ? `同組 WAT 異常：${hit.join('、')} → 良率變化可能與${[...new Set(hint)].join('、') || '這些電性'}相關，建議先看這些 item 的 HL。` : '同組 WAT 沒有亮燈 → 電性未見異常，優先查缺陷（defect scan）、CP bin 分布與 wafer map 空間特徵。',
@@ -134,7 +136,8 @@
     const isWiw = which === 'wiw', ratio = isWiw ? cell.wiwRatio : cell.sdRatio;
     const thk = cell.item.cat === 'thk';
     return {
-      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${isWiw ? '片內均勻性變差' : 'wafer 間變異放大'}（σ ×${ratio.toFixed(2)}）`,
+      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${isWiw ? '片內 σ' : 'wafer 間 σ'} ×${ratio.toFixed(2)}`,
+      mean: isWiw ? '片內均勻性變差' : 'wafer 間變異放大',
       cat: R.byId(cell.item.cat).label,
       causes: isWiw
         ? (thk ? ['CMP edge profile 改變（retaining ring、pad conditioning、zone pressure）', 'ECP 電鍍均勻性', '前層 topography'] : ['Etch chamber center／edge 均勻性', 'Litho focus 在 edge shot 偏移', 'Hardmask 厚度均勻性'])
@@ -149,7 +152,13 @@
 
   /** split "Con_M12~OHM/SQ~Mean" → { short:'Con_M12', unit:'OHM/SQ', stat:'Mean' } */
   R.parseName = (name) => {
-    const str = String(name);
+    let str = String(name);
+    // "Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK)" → "M15CUCMP_5 NOVA_THK"（拿掉統計包裝、固定字樣、站點代碼）
+    const w = str.match(/^(?:mean|avg|average|median|max|min|std|sd)\s*\((.+?)\)?\s*$/i);   // closing paren may be missing (truncated exports)
+    if (w) {
+      const parts = w[1].split(',').map((t) => t.trim()).filter((t) => t && !/^item value|by site|by wafer|^value$/i.test(t) && !/^\d+(?:\.\d+)?$/.test(t));
+      str = parts.map((t) => t.replace(/^\d{3,}(?:\.\d+)?\s+/, '')).join(' ') || str;
+    }
     if (str.includes('~')) { const p = str.split('~').map((s) => s.trim()); return { short: p[0], unit: p[1] || '', stat: p[2] || '' }; }
     const m = str.match(/^(.*?)\s*[(\[（]\s*([^)\]）]{1,12})\s*[)\]）]\s*$/);     // "RS_M3 (ohm/sq)", "M3 CD [nm]"
     return m && m[1] ? { short: m[1].trim(), unit: m[2].trim(), stat: '' } : { short: str.trim(), unit: '', stat: '' };
@@ -168,15 +177,22 @@
     const { short, unit } = R.parseName(name);
     let best = { cat: 'other', conf: 0.2 };
     for (const c of R.CATS) {
-      if (c.id === 'other') continue;
+      if (/^other/.test(c.id)) continue;
       const n = c.name && c.name.test(short), u = c.unit && unit && c.unit.test(unit);
       const conf = n && u ? 0.95 : n ? 0.75 : u ? 0.5 : 0;
       if (conf > best.conf) best = { cat: c.id, conf };
     }
     // inline CD of a via layer → via CD
     if (best.cat === 'cd' && /^v\d+/i.test(R.layer(name))) best.cat = 'vcd';
+    // range／σ／max／min／uniformity 這類衍生統計欄：歸到該模組的「其他」，仍點燈但不配對
+    if (R.STAT_SUFFIX.test(short) || /^(r|rng|range|sd|std|stdev|sigma|3s|max|min|nu|cv)$/i.test(unit || '')) {
+      const kind = (R.byId(best.cat) || {}).kind || 'wat';
+      best = { cat: kind === 'inline' ? 'other_inline' : kind === 'yield' ? 'other_yield' : 'other', conf: Math.max(best.conf, 0.6), stat: true };
+    }
     return best;
   };
+  /** derived-statistic suffixes: NOVA_THK_R, CD_SD, THK_3S, THK (R), *_MAX, *_NU, *_U% … */
+  R.STAT_SUFFIX = /(?:[_\-\s]|\()(r|rng|range|sd|std|stdev|stddev|sigma|3s|3sigma|max|min|nu|u%|unif|uniformity|cv|wiw|w2w)\)?$/i;
 
   /** inline columns that physically relate to a WAT item (same layer, category from pairs) */
   R.relatedInline = (watName, watCat, items) => {
@@ -223,55 +239,60 @@
    * cell: { item, group, cip, k, mean, bmean, n, bn, level }
    * related: [{ item, sign, k }]  (K of the paired inline items in the same group/CIP)
    */
+  /** relation of one paired item to the abnormal cell: strong（有偏移且 wafer 間有關聯）／weak（有偏移但關聯弱）／flat／opp／none */
+  R.relOf = (rel, dirSign) => {
+    if (rel.k == null || !isFinite(rel.k)) return 'none';
+    const exp = rel.sign === 0 ? Math.sign(rel.k) : dirSign * rel.sign;
+    if (Math.abs(rel.k) < 0.5) return 'flat';
+    if (Math.sign(rel.k) !== exp) return 'opp';
+    if (rel.r != null && Math.abs(rel.r) < 0.3) return 'weak';
+    return 'strong';
+  };
+  R.fmtK = (k) => `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`;
+  R.fmtR = (r) => (r == null ? '' : `r = ${r >= 0 ? '' : '−'}${Math.abs(r).toFixed(2)}`);
+  /** "V12 CD AEI −2.79σ（r = −0.84）" */
+  R.relTxt = (rel, withR = true) => `${R.parseName(rel.item.name).short} ${R.fmtK(rel.k)}${withR && rel.r != null ? `（${R.fmtR(rel.r)}）` : ''}`;
+
   R.diagnose = (cell, related, xrel) => {
     const cat = R.byId(cell.item.cat);
     const L = R.layer(cell.item.name);
-    const dir = (cell.dir ?? cell.k) >= 0 ? 'up' : 'down';
+    const dirSign = Math.sign(cell.dir ?? cell.k) || 1;
+    const dir = dirSign >= 0 ? 'up' : 'down';
     const d = cat[dir] || { mean: dir === 'up' ? '偏高' : '偏低', causes: [], checks: [] };
-    const lines = [];
-    // inline cross-check
-    let verdict = '';
-    const consistent = [], notMoving = [], opposite = [];
-    for (const r of related || []) {
-      if (r.k == null || !isFinite(r.k)) continue;
-      const expected = Math.sign(cell.dir ?? cell.k) * r.sign;          // expected sign of the inline shift
-      if (Math.abs(r.k) < 0.5) notMoving.push(r);
-      else if (Math.sign(r.k) === expected) consistent.push(r);
-      else opposite.push(r);
-    }
-    const fmtK = (k) => `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`;
-    const lst = (a) => a.map((r) => `${R.parseName(r.item.name).short} ${fmtK(r.k)}`).join('、');
-    if (consistent.length) {
-      verdict = `inline 佐證：${lst(consistent)}，方向與 WAT 一致 → 主因很可能是 ${consistent.map((r) => R.byId(r.item.cat).label.replace('（inline）', '')).join('／')} 偏移。`;
-      if (opposite.length) verdict += `（另 ${lst(opposite)} 方向相反，可能部分抵銷）`;
-    } else if (notMoving.length || opposite.length) {
+    const fmtK = R.fmtK;
+    const grp = (arr) => { const o = { strong: [], weak: [], flat: [], opp: [] }; for (const r of arr || []) { const st = R.relOf(r, dirSign); if (o[st]) o[st].push(r); } return o; };
+    const same = grp(related), x = grp(xrel);
+    const lst = (a) => a.map((r) => R.relTxt(r)).join('、');
+    const catLabel = (a) => a.map((r) => R.byId(r.item.cat).label.replace('（inline）', '')).join('／');
+    let verdict = '', xline = '', xchecks = [];
+    if (same.strong.length) {
+      verdict = `同層 ${lst(same.strong)} 與 WAT 同向且 wafer 間有關聯 → 主因很可能是 ${catLabel(same.strong)} 偏移。`;
+      if (same.opp.length) verdict += `（${lst(same.opp)} 反向，可能部分抵銷）`;
+      if (x.strong.length) { xline = `鄰層 ${lst(x.strong)} 也有偏移，可能疊加。`; xchecks = [x.strong[0].check]; }
+    } else if (x.strong.length) {
+      const sameTxt = same.weak.length ? `同層 ${lst(same.weak)} 有偏移但關聯弱；` : same.flat.length ? `同層 ${same.flat.map((r) => R.relTxt(r, false)).join('、')} 未偏移；` : same.opp.length ? `同層 ${lst(same.opp)} 反向；` : '無同層 inline；';
+      verdict = `${sameTxt}鄰層 ${lst(x.strong)} 同向且 wafer 間有關聯 → 建議先確認 ${x.strong[0].layer} 製程對本層的影響。`;
+      xline = verdict; xchecks = [x.strong[0].check];
+    } else if (same.weak.length) {
+      verdict = `同層 ${lst(same.weak)} 有偏移但 wafer 間關聯弱 → ${catLabel(same.weak)} 可能只是部分原因，同時查製程條件與機台。`;
+    } else if (same.flat.length || same.opp.length) {
       const parts = [];
-      if (notMoving.length) parts.push(`${lst(notMoving)} 沒有明顯偏移`);
-      if (opposite.length) parts.push(`${lst(opposite)} 方向與預期相反`);
-      verdict = `inline 對照：${parts.join('；')} → 尺寸無法解釋這個 WAT 偏移，優先查製程條件（${cat.id === 'rc' ? 'via 底部殘留／barrier' : cat.id === 'rs' ? 'Cu 電鍍／barrier／晶粒' : '缺陷／材料'}）與機台 commonality${opposite.length ? '，並確認量測與資料對應' : ''}。`;
+      if (same.flat.length) parts.push(`${same.flat.map((r) => R.relTxt(r, false)).join('、')} 未偏移`);
+      if (same.opp.length) parts.push(`${lst(same.opp)} 反向`);
+      verdict = `同層 ${parts.join('；')} → 尺寸無法解釋，優先查製程條件（${cat.id === 'rc' ? 'via 底部殘留／barrier' : cat.id === 'rs' ? 'Cu 電鍍／barrier／晶粒' : '缺陷／材料'}）與機台 commonality。`;
+      if (x.weak.length) verdict += `鄰層 ${lst(x.weak)} 有偏移但關聯弱，證據不足。`;
     } else {
-      verdict = `資料中沒有 ${L || '該層'} 的 inline 數據可交叉比對 → 建議調出 ${fill(d.checks[0] || 'inline 數據', L)} 確認。`;
+      verdict = `資料中沒有 ${L || '該層'} 的 inline 可交叉比對 → 建議調出 ${fill(d.checks[0] || 'inline 數據', L)} 確認。`;
+      if (x.weak.length) verdict += `鄰層 ${lst(x.weak)} 有偏移但關聯弱。`;
     }
-    // cross-layer (v2.6): when the same layer does not explain the shift, look one layer down／up (CMP topography inheritance)
-    const xs = (xrel || []).filter((r) => r.k != null && isFinite(r.k) && Math.abs(r.k) >= 0.5);
-    const xOk = xs.filter((r) => r.sign === 0 || Math.sign(r.k) === Math.sign(cell.dir ?? cell.k) * r.sign);
-    let xline = '', xcauses = [], xchecks = [];
-    if (xOk.length && !consistent.length) {
-      const sameTxt = notMoving.length ? `同層 ${lst(notMoving)} 未偏移；` : opposite.length ? `同層 ${lst(opposite)} 反向；` : `無同層 inline；`;
-      verdict = `${sameTxt}跨層 ${lst(xOk)} 有偏移 → ${xOk[0].why}。`;
-      xline = verdict;
-      xcauses = [];   // base rules carry the cross-layer causes; evidence ranking lifts them (v2.7)
-      xchecks = [xOk[0].check];
-    } else if (xOk.length) {
-      xline = `跨層：${lst(xOk)}（${xOk[0].layer}）也有偏移，可能疊加。`;
-      xchecks = [xOk[0].check];
-    }
+    const xFirst = !same.strong.length && x.strong.length;
     return {
-      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${d.mean}（${cell.text || `K ${fmtK(cell.k)}`}）`,
+      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${cell.text || `K ${fmtK(cell.k)}`}`,
+      mean: d.mean,
       cat: cat.label,
-      causes: [...xcauses, ...d.causes.map((c) => fill(c, L))],
-      checks: xOk.length && !consistent.length ? [...xchecks, ...d.checks.map((c) => fill(c, L))] : [...d.checks.map((c) => fill(c, L)), ...xchecks],
-      verdict: verdict + (xline && xline !== verdict ? ' ' + xline : ''),
+      causes: d.causes.map((c) => fill(c, L)),
+      checks: xFirst ? [...xchecks, ...d.checks.map((c) => fill(c, L))] : [...d.checks.map((c) => fill(c, L)), ...xchecks],
+      verdict,
       xline,
       fallback: '若當層與鄰層 inline 都正常 → 比對 CIP lot 的機台履歷（tool commonality），找出共同經過的 chamber／機台。',
     };

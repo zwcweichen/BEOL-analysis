@@ -69,7 +69,7 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(st.cond === 'Chamber' && st.base === 'CH_A', 'long table with other column names: condition Chamber');
     const v = await page.evaluate(() => ({ k: __cell('Rc_V4', '全部', 'CH_B').k, wiw: App.rpt.res.hasWiw, dx: App.rpt.res.findings.wat[0]?.dx.verdict || '' }));
     ok(near(v.k, REF.rc_v4) && v.wiw, `Rc_V4 K ${v.k.toFixed(2)} = pandas, site data → within-wafer σ`);
-    ok(/V4_CD/.test(v.dx) && /一致/.test(v.dx), `diagnosis cites same-layer V4_CD: ${v.dx}`);
+    ok(/V4_CD/.test(v.dx) && /同向/.test(v.dx), `diagnosis cites same-layer V4_CD: ${v.dx}`);
   });
   await run(path.join(SD, 'variants', 'F_big_6x6.xlsx'), async (page, st) => {
     ok(st.cips.join() === 'FAB15,FAB12' && st.group === 'Part6', '6 products × 2 CIPs detected');
@@ -105,12 +105,30 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(st.items['M2 DISH'] === 'topo/inline/k', 'dishing monitor classified as topography (inline)');
     const v = await page.evaluate(() => { const f = App.rpt.res.findings.wat.find((x) => x.cell.item.name === 'Rs_M3'); const cards = [...document.querySelectorAll('.xcs .xc')].map((d) => d.className.replace('xc ', '') + ':' + d.innerText.replace(/\s+/g, ' '));
       return { v: f.dx.verdict, c0: f.dx.causes[0], k0: f.dx.checks[0], cards, fig: document.querySelector('#hlDet .hd-figs .fig:nth-child(2) .ft')?.innerText || '' }; });
-    ok(/同層 .*未偏移；跨層 M2 (THK|DISH)/.test(v.v) && /topography/.test(v.v), `Rs_M3 verdict: same layer flat → cross-layer M2 explains (${v.v.slice(0, 60)}…)`);
+    ok(/同層 .*未偏移；鄰層 M2 (THK|DISH)/.test(v.v) && /有關聯/.test(v.v) && !/topography/.test(v.v), `Rs_M3 verdict: same layer flat → adjacent M2 with r (${v.v.slice(0, 70)}…)`);
     ok(/M2 THK／dishing/.test(v.k0), 'cross-layer check listed first');
-    const cz = await page.evaluate(() => [...document.querySelectorAll('.czs li')].map((t) => t.className.replace('cz ', '') + ':' + t.innerText.replace(/\s+/g, ' ')));
-    ok(/^yes:✔ 下層 topography 繼承/.test(cz[0]) && /M2 DISH \+2\.8\dσ/.test(cz[0]) && cz.some((t) => /^no:✘ Cu 厚度偏薄/.test(t) && /M3 THK 未偏移/.test(t)), `causes ranked by evidence: ${cz[0]} … ${cz[cz.length - 1]}`);
-    ok(v.cards.some((t) => /^ok:跨層/.test(t) && /M2 DISH \+2\.\d+σ/.test(t)) && v.cards.some((t) => /^no:Inline/.test(t)) && v.cards.some((t) => /^need:機台/.test(t)), `cards: Inline ✘ / 跨層 ✔ / 機台 ○ (no tool columns does not block) → ${v.cards.join(' | ')}`);
-    ok(/Rs_M3 vs M2 DISH/.test(v.fig) && /跨層/.test(v.fig), `partner chart switches to the cross-layer item (${v.fig.split('\n')[0]})`);
+    const cz = await page.evaluate(() => [...document.querySelectorAll('.mech .mz')].map((t) => t.className.replace('mz ', '') + ':' + t.innerText.replace(/\s+/g, ' ')));
+    ok(/^yes:✔ 下層 topography 繼承/.test(cz[0]) && /M2 DISH \+2\.8\dσ/.test(cz[0]) && cz.some((t) => /^no:✘ Cu 厚度偏薄/.test(t) && /M3 THK 未偏移/.test(t)), `mechanisms ranked by evidence: ${cz[0]} … ${cz[cz.length - 1]}`);
+  });
+  await run(path.join(SD, 'variants', 'H_longnames.xlsx'), async (page, st) => {
+    ok(st.cond === 'FAB_Name' && st.base === 'FAB18_U%_BSL' && st.group === 'Product', 'user-like file: condition FAB_Name (values FAB18_U%_BSL / FAB15_U%_BSL)');
+    ok(st.items['Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK)'] === 'thk/inline/k' && st.items['Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK_R)'] === 'other_inline/inline/k' && st.items['Mean(Con_M15)'] === 'rs/wat/k', 'long "Mean(Item Value by Site, …)" names: THK → thk, THK_R (range) → 其他（inline）, Mean(Con_M15) → rs');
+    const v = await page.evaluate(() => { const f = App.rpt.res.findings.wat.find((x) => /Con_M15/.test(x.cell.item.name)); return { short: App.rules.parseName('Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK)').short, v: f.dx.verdict,
+      cards: [...document.querySelectorAll('.xcs .xc')].map((d) => d.className.replace('xc ', '') + ':' + d.innerText.replace(/\s+/g, ' ')), cks: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')) }; });
+    ok(v.short === 'M15CUCMP_5 NOVA_THK', `long name shortened for display (${v.short})`);
+    ok(/同層 .*未偏移/.test(v.v) && /鄰層 .*關聯弱/.test(v.v) && !/topography|pattern/.test(v.v), `adjacent-layer shift with r = 0.1 is reported as weak evidence, not as a mechanism claim (${v.v.slice(0, 80)}…)`);
+    ok(v.cards.some((t) => /^warn:鄰層/.test(t) && /關聯弱/.test(t)) && v.cards.some((t) => /^warn:機台/.test(t) && /皆偏/.test(t)), `cards: 鄰層 △ 關聯弱, 機台 △ 6/6 皆偏 → ${v.cards.join(' | ')}`);
+    ok(v.cks.some((t) => /^no:.*post-CMP THK/.test(t) && /未偏移/.test(t)) && v.cks.some((t) => /^need:.*trench CD/.test(t)), 'checks: THK ✘ (r strong but item not shifted), CD ○ missing');
+    // check window → import the missing CD file by wafer id → the same window reopens with ✔
+    const i = v.cks.findIndex((t) => /trench CD/.test(t));
+    await page.evaluate((i) => document.querySelectorAll('.cks .ckz')[i].click(), i); await page.waitForSelector('.fwin [data-ck=imp]');
+    ok(await page.evaluate(() => /沒有對應/.test(document.querySelector('.fwin .tw-v').innerText)), 'check window says the column is missing and offers import');
+    await page.evaluate(() => { App.rpt.reopenCheck = null; document.querySelector('.fwin [data-ck=imp]').click(); });
+    await page.setInputFiles('#file2', path.join(SD, 'variants', 'H_link_M15CD.xlsx')); await page.waitForTimeout(3000);
+    const after = await page.evaluate(() => ({ v: document.querySelector('.fwin .tw-v')?.innerText || '', rate: App.rpt.links[0]?.rate, cks: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')), cards: [...document.querySelectorAll('.xcs .xc')].map((d) => d.className.replace('xc ', '') + ':' + d.innerText.replace(/\s+/g, ' ')) }));
+    ok(after.rate > 0.75 && /M15 CD AEI/.test(after.v) && /有關聯/.test(after.v), `linked M15 CD (UAB001-02 ↔ UAB001.02, ${Math.round(after.rate * 100)}% matched) → window reopens: ${after.v.slice(0, 60)}`);
+    ok(after.cks.some((t) => /^ok:.*trench CD/.test(t) && /有關聯/.test(t)) && after.cards.some((t) => /^ok:Inline/.test(t) && /M15 CD AEI/.test(t)), 'check row and Inline card turn ✔ after the import');
+    await page.keyboard.press('Escape');
   });
   await run(path.join(SD, 'variants', 'E_single_cond.xlsx'), async (page, st) => {
     ok(st.tab === 'tab-setup' && !st.hasRes, `single condition → no fake report, asks in setup (${st.msg.trim()})`);

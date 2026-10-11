@@ -53,3 +53,29 @@ for prod in ['PA','PB']:
                 'Rs_M3':round(rs3,5),'Rc_V2':round(rc2,4),'LK_M3':np.exp(rng.normal(np.log(3e-11),.4)),
                 'M3 CD':round(m3cd,2),'M3 THK':round(m3thk,1),'M2 THK':round(m2thk,1),'M2 DISH':round(m2dish,1)})
 pd.DataFrame(rows).to_excel(OUT+'G_xlayer.xlsx',index=False)
+# ---- H (v2.8, 角色 B：模仿使用者實際資料的樣子): 長欄名 "Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK)"、
+#      同站點另有 NOVA_THK_R（range，衍生統計）、條件值 "FAB18_U%_BSL"／"FAB15_U%_BSL"、M14 CMP tool 欄；
+#      故事：Con_M15 偏高（+2.3σ），M15 THK 正常，M14 THK 略偏（+0.7σ）但 wafer 間與 Con_M15 關聯弱；沒有任何 CD 欄（檢查視窗應提示匯入）。
+rows=[]; cnt=0
+for prod in ['TMQI55','TMSA72']:
+    for cond,n in [('FAB18_U%_BSL',400),('FAB15_U%_BSL',60)]:
+        for i in range(n):
+            cnt+=1; hit=(prod=='TMQI55' and cond.startswith('FAB15'))
+            m15=2600+rng.normal(0,30); m14=2500+rng.normal(0,30)+(20 if hit else 0)
+            m15r=60+rng.normal(0,8)+(10 if hit else 0); m14r=55+rng.normal(0,8)
+            con15=0.1*(2600/m15)*(1+rng.normal(0,.012))+(0.0035 if hit else 0)      # shift NOT driven by M14 THK → weak r
+            con14=0.1*(2500/m14)*(1+rng.normal(0,.012))
+            rows.append({'WAFER_ID':f'UAB{cnt//25:03d}.{1+cnt%25:02d}','Product':prod,'FAB_Name':cond,'WAT Date':pd.Timestamp('2026-05-01')+pd.Timedelta(days=int(i*150/n)),
+                'M14_CMP_Tool':f'CMP0{1+i%6}',
+                'Mean(Con_M14)':round(con14,5),'Mean(Con_M15)':round(con15,5),'Mean(Rc_V13)':round(2.3+rng.normal(0,.08),4),'Mean(Rc_V14)':round(2.4+rng.normal(0,.08),4),
+                'Mean(LK_M14)':np.exp(rng.normal(np.log(2e-11),.4)),'Mean(LK_M15)':np.exp(rng.normal(np.log(2e-11),.4)),
+                'Mean(Item Value by Site, 07348.050 M14CUCMP_5, NOVA_THK)':round(m14,1),'Mean(Item Value by Site, 07348.050 M14CUCMP_5, NOVA_THK_R)':round(m14r,1),
+                'Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK)':round(m15,1),'Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK_R)':round(m15r,1)})
+pd.DataFrame(rows).to_excel(OUT+'H_longnames.xlsx',index=False)
+# 補資料用：M15 trench CD，只有部分 wafer，CD 與 Con_M15 負相關（匯入後檢查視窗應變成 ✔）
+cd=[]
+for r in rows:
+    if rng.random()<0.8:
+        c=62-(r['Mean(Con_M15)']-0.1)/0.0035*1.2+rng.normal(0,.5)
+        cd.append({'WAFER':r['WAFER_ID'].replace('.','-'),'M15 CD AEI':round(c,2)})
+pd.DataFrame(cd).to_excel(OUT+'H_link_M15CD.xlsx',index=False)

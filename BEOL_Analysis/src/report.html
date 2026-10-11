@@ -17,7 +17,7 @@
   <button class="btn" id="btnCopy" disabled title="把結論文字複製到剪貼簿，方便貼到 mail／chat">複製結論</button>
   <button class="btn" id="btnPrint" disabled>列印／PDF</button>
   <button class="btn" id="btnHtml" disabled title="One-page HTML，圖嵌入，可直接寄送">匯出 HTML</button>
-  <button class="btn primary" id="btnPpt" disabled title="PowerPoint：點燈表、HL trend、總覽 trend（WAT＋Inline）">匯出 PPT</button>
+  <select id="pptDetail" class="sm" title="PPT 的 HL 細節頁：自動 = 橘燈（HL ≤ 4 時全部）；HL 總表一律包含全部 HL"><option value="auto">HL 細節：自動</option><option value="orange">只橘燈</option><option value="all">全部 HL</option></select><button class="btn primary" id="btnPpt" disabled title="PowerPoint：封面、點燈表、HL 總表、HL 細節、總覽 trend">匯出 PPT</button>
 </header>
 <div class="legend-bar" id="legendBar"></div>
 <nav class="tabs" id="tabs">

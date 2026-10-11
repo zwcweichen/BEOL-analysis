@@ -56,9 +56,9 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
   ok(W.spaNa.level === 'na' && /無資料/.test(W.spaNa.reason), `SPA_M13@TMRF89 grey with reason: ${W.spaNa.reason}`);
 
   // wording from the diagnosis engine (shown in the HL detail pane)
-  const words = await page.evaluate(() => App.rpt.res.findings.wat.map((f) => [f.dx.title, f.dx.verdict, f.dx.causes.join('、')].join(' ｜ ')));
+  const words = await page.evaluate(() => App.rpt.res.findings.wat.map((f) => [f.dx.title, f.dx.mean, f.dx.verdict, f.dx.causes.join('、')].join(' ｜ ')));
   words.forEach((w) => console.log('   ▸ ' + w.slice(0, 200)));
-  ok(words.some((w) => /Rc_V12/.test(w) && /V12 CD/.test(w) && /方向與 WAT 一致/.test(w)), 'Rc finding cites V12 CD as consistent inline evidence');
+  ok(words.some((w) => /Rc_V12/.test(w) && /V12 CD/.test(w) && /同向/.test(w)), 'Rc finding cites V12 CD as consistent inline evidence');
   ok(words.some((w) => /LK_M12/.test(w) && /×2\.9/.test(w) && /M12 CD/.test(w)), 'LK finding shows fold and cites M12 CD');
   ok(words.some((w) => /SPA_M12/.test(w) && /異常比例/.test(w) && /M12 CD/.test(w)), 'SPA finding (fail rate) cites M12 CD');
 
@@ -175,17 +175,23 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   console.log('cross-checks:', xc.map((x) => `${x.label}:${x.state}:${x.txt}`).join(' | '));
   const tool = xc.find((x) => x.label === '機台');
   ok(tool && tool.state === 'ok' && /V12_ETCH_CH：CH_B/.test(tool.txt) && /CIP \d+% 走 CH_B/.test(tool.txt) && !/p ?=/.test(tool.txt), `tool card: one-line verdict, no p-values (${tool?.txt})`);
-  ok(xc.find((x) => x.label === 'Inline')?.state === 'ok' && /V12 CD AEI/.test(xc.find((x) => x.label === 'Inline').txt) && /r = -0\.\d+/.test(xc.find((x) => x.label === 'Inline').txt), 'Inline card: WAT ↔ inline line up, r shown');
+  ok(xc.find((x) => x.label === 'Inline')?.state === 'ok' && /V12 CD AEI/.test(xc.find((x) => x.label === 'Inline').txt) && /r = −0\.\d+/.test(xc.find((x) => x.label === 'Inline').txt), 'Inline card: WAT ↔ inline line up, r shown');
   ok(xc.find((x) => x.label === 'Yield')?.state === 'ok' && /Bin7_open/.test(xc.find((x) => x.label === 'Yield').txt), 'Yield card lists abnormal yield items only');
-  // evidence-ranked causes (v2.7): supported first (✔ with the evidence), contradicted last and greyed (✘)
-  const cz = await page.evaluate(() => [...document.querySelectorAll('.czs li')].map((t) => ({ st: t.className.replace('cz ', ''), t: t.innerText.replace(/\s+/g, ' ') })));
-  ok(cz[0].st === 'yes' && /Via CD 偏小/.test(cz[0].t) && /V12 CD AEI −2\.79σ/.test(cz[0].t), `causes: supported cause first with its evidence (${cz[0].t})`);
-  ok(cz.filter((x) => x.st === 'no').length >= 1 && cz.every((x, i) => i === 0 || ({ yes: 0, na: 1, no: 2 })[x.st] >= ({ yes: 0, na: 1, no: 2 })[cz[i - 1].st]), 'causes: order yes → no-data → contradicted (greyed)');
-  // guided checks: compact list, each with a status; no p-value / stats text
-  const cks = await page.evaluate(() => [...document.querySelectorAll('.cks li')].map((t) => ({ k: t.className.replace('ck ', ''), a: t.querySelector('a')?.innerText || '', t: t.innerText.replace(/\s+/g, ' ') })));
-  console.log('checks:', cks.map((x) => `${x.k}:${x.a}`).join(' | '));
-  ok(cks.some((x) => x.k === 'ok' && /V12 via CD/i.test(x.a)) && cks.some((x) => x.k === 'ok' && /chamber/i.test(x.a)) && cks.some((x) => x.k === 'ext'), 'checks are classified: ✔ inline corr, ✔ tool/chamber check (opens tool window), ◇ outside the tool');
-  ok(cks.length <= 6 && cks.every((x) => x.t.length < 60), `checks list is compact (${cks.length} items, longest ${Math.max(...cks.map((x) => x.t.length))} chars)`);
+  // evidence-ranked mechanisms (v2.7／v2.8: demoted to one line under the single check list)
+  const cz = await page.evaluate(() => [...document.querySelectorAll('.mech .mz')].map((t) => ({ st: t.className.replace('mz ', ''), t: t.innerText.replace(/\s+/g, ' ') })));
+  ok(cz[0].st === 'yes' && /Via CD 偏小/.test(cz[0].t) && /V12 CD AEI −2\.79σ/.test(cz[0].t), `mechanisms: supported cause first with its evidence (${cz[0].t})`);
+  ok(cz.filter((x) => x.st === 'no').length >= 1 && cz.every((x, i) => i === 0 || ({ yes: 0, na: 1, no: 2 })[x.st] >= ({ yes: 0, na: 1, no: 2 })[cz[i - 1].st]), 'mechanisms: order yes → no-data → contradicted (greyed)');
+  // single check list (v2.8): every row has a status, an evidence note and opens the check window
+  const cks = await page.evaluate(() => [...document.querySelectorAll('.cks li')].map((t) => ({ k: t.className.replace('ck ', ''), a: t.querySelector('a')?.innerText || '', n: t.querySelector('.cn')?.innerText || '', z: !!t.querySelector('.ckz') })));
+  console.log('checks:', cks.map((x) => `${x.k}:${x.a}:${x.n}`).join(' | '));
+  ok(cks.some((x) => x.k === 'ok' && /V12 via CD/i.test(x.a) && /r = −0\.8\d 有關聯/.test(x.n)) && cks.some((x) => x.k === 'ok' && /chamber/i.test(x.a) && /CH_B/.test(x.n)) && cks.some((x) => x.k === 'need' && /匯入/.test(x.n)), 'checks: ✔ inline with r, ✔ tool hit, ○ missing data → import');
+  ok(cks.every((x) => x.z) && cks.length <= 6, 'every check row opens the check window (🔍)');
+  await page.evaluate(() => document.querySelectorAll('.cks .ckz')[0].click()); await page.waitForSelector('.fwin #ckCorr.js-plotly-plot'); await page.waitForTimeout(500);
+  const ckw = await page.evaluate(() => ({ v: document.querySelector('.fwin .tw-v').innerText, x: document.querySelector('.fwin [data-ck=x]').value, trend: !!document.querySelector('.fwin #ckTrend.js-plotly-plot'), imp: !!document.querySelector('.fwin [data-ck=imp]') }));
+  ok(/V12 CD AEI/.test(ckw.x) && /r = −0\.8\d/.test(ckw.v) && /有關聯/.test(ckw.v) && /方向與物理預期一致/.test(ckw.v) && ckw.trend && ckw.imp, `check window: X auto = V12 CD AEI, verdict with r + direction, resonance trend, import button (${ckw.v.slice(0, 60)})`);
+  await page.evaluate(() => { document.querySelector('.fwin [data-ck=x]').value = 'M12 THK~A'; document.querySelector('.fwin [data-ck=x]').dispatchEvent(new Event('change')); }); await page.waitForTimeout(500);
+  ok(await page.evaluate(() => /關聯性不大|弱關聯/.test(document.querySelector('.fwin .tw-v').innerText)), 'user can switch X; unrelated item → 關聯性不大');
+  await page.keyboard.press('Escape');
   // tool analysis window: verdict line + run-rate bars (no table) + weekly chart + box plot with K annotations
   await page.evaluate(() => document.querySelector('.xcs .xc[data-xc]:nth-child(2)') && [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台').click());
   await page.waitForSelector('.fwin #twBox.js-plotly-plot'); await page.waitForTimeout(700);
@@ -246,14 +252,14 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   await page.fill('[data-f=up_checks]', 'fab 自訂檢查 1\n{L} trench CD');
   await page.click('[data-kbf=save]'); await page.waitForTimeout(1500);
   const kb1 = await page.evaluate(() => ({ v: App.rules.kbVersion(), t: App.rpt.res.findings.wat.find((f) => f.cell.item.name.startsWith('LK_M12')).dx, lk: App.rpt.res.cells[App.rpt.res.items.find((i) => i.name.startsWith('LK_M12')).name].TMRX12.FAB15.fold }));
-  ok(/fab 層 1 條/.test(kb1.v) && /fab 測試/.test(kb1.t.title) && kb1.t.checks[0] === 'fab 自訂檢查 1' && kb1.t.checks[1] === 'M12 trench CD', 'edited rule is applied: title, checks with {L} filled, report recomputed');
+  ok(/fab 層 1 條/.test(kb1.v) && /fab 測試/.test(kb1.t.mean) && kb1.t.checks[0] === 'fab 自訂檢查 1' && kb1.t.checks[1] === 'M12 trench CD', 'edited rule is applied: title, checks with {L} filled, report recomputed');
   ok(near(kb1.lk, R.lk_TMRX12), 'numbers unchanged after KB edit');
   const [dx] = await Promise.all([page.waitForEvent('download'), page.click('[data-kb=xlsx]')]);
   const xl = path.join(SHOT, 'rules_export.xlsx'); await dx.saveAs(xl);
   await page.click('[data-kb=clear]'); await page.waitForTimeout(800);
   ok(await page.evaluate(() => !/fab 層/.test(App.rules.kbVersion())), 'clear fab layer → base only');
   await page.setInputFiles('#kbFile', xl); await page.waitForTimeout(1500);
-  const kb2 = await page.evaluate(() => ({ v: App.rules.kbVersion(), n: App.rptUI.kbOverlay().rules.length, t: App.rpt.res.findings.wat.find((f) => f.cell.item.name.startsWith('LK_M12')).dx.title }));
+  const kb2 = await page.evaluate(() => ({ v: App.rules.kbVersion(), n: App.rptUI.kbOverlay().rules.length, t: App.rpt.res.findings.wat.find((f) => f.cell.item.name.startsWith('LK_M12')).dx.mean }));
   ok(kb2.n === 1 && /fab 測試/.test(kb2.t), `Excel round trip: only the edited rule becomes a fab override (${kb2.v})`);
   await page.screenshot({ path: `${SHOT}/r9_kb.png` });
   await page.click('[data-kb=clear]'); await page.waitForTimeout(800);
@@ -284,7 +290,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   ok(near(I.thk.wiw, Q.m13thk_TMWF54.wiw) && I.thk.varLevel === 'orange', `M13 THK@TMWF54 WIW σ ×${I.thk.wiw?.toFixed(2)} (pandas ×${Q.m13thk_TMWF54.wiw.toFixed(2)}) orange`);
   ok(near(I.m12.sd, Q.m12cd_TMRX12.sd) && I.m12.varLevel === 'orange', `M12 CD@TMRX12 W2W σ ×${I.m12.sd?.toFixed(2)} (pandas ×${Q.m12cd_TMRX12.sd.toFixed(2)}) orange`);
   ok(I.kinds.some((k) => /^var:wiw:M13 THK/.test(k)) && I.kinds.some((k) => /^var:w2w:M12 CD/.test(k)), 'variation findings: WIW for M13 THK, W2W for M12 CD');
-  const iw = await page.evaluate(() => App.rpt.res.findings.inline.map((f) => [f.dx.title, f.dx.verdict, f.dx.causes.join('、')].join(' ｜ ')));
+  const iw = await page.evaluate(() => App.rpt.res.findings.inline.map((f) => [f.dx.title, f.dx.mean, f.dx.verdict, f.dx.causes.join('、')].join(' ｜ ')));
   iw.slice(0, 6).forEach((w) => console.log('   ▸ ' + w.slice(0, 200)));
   ok(iw.some((w) => /M13 THK/.test(w) && /片內均勻性變差/.test(w) && /CMP/.test(w)), 'WIW finding wording (CMP edge profile)');
   ok(iw.some((w) => /V12 CD/.test(w) && /WAT/.test(w)), 'inline mean finding mentions WAT impact');

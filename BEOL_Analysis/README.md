@@ -11,6 +11,7 @@ BEOL 後段製程 BSL vs CIP 的固定流程分析工具。這個專案資料夾
 | 資料層 | ✅ v2.4 | 「＋ 連結資料」把機台履歷、yield 等第二個檔案以 wafer id 連進來；顯示配對率；長表自動轉寬表 |
 | 疑似因子 | ✅ v2.3 | 異常 item 自動掃描資料中的機台／chamber 等欄位（Kruskal–Wallis、BH 校正、混淆偵測、ΔK） |
 | 引導式檢查＋機台分析 | ✅ v2.5 | 每條建議檢查帶狀態與一鍵動作；機台分析視窗：run 貨比例、box plot、自訂組合分組 |
+| 檢查視窗＋其他類別 | ✅ v2.8 | 每條建議檢查一個 🔍：相關圖（X／Y 可換）、r 判定、共振 trend、缺資料直接匯入補進；range／σ 欄歸「其他」不配對 |
 | 原因依證據排序 | ✅ v2.7 | 可能原因依同層 inline／跨層／機台證據排序：✔ 支持排前、✘ 不支持灰掉 |
 | 交叉比對卡＋跨層 | ✅ v2.6 | HL 上方一行一張：Inline／跨層／機台／Yield；機台視窗加每週 run 貨與 K 標註；下層 CMP topography 繼承的跨層診斷 |
 
@@ -21,7 +22,7 @@ BEOL 後段製程 BSL vs CIP 的固定流程分析工具。這個專案資料夾
 4. 上方按鈕切換 WAT／Inline 模組。戰報頁上方可以直接改分組欄（例如 Part6、不分組）、比較欄、BSL 和 CIP。
 5. 戰報總覽：左邊是點燈表，右邊是異常 HL；點 HL 或按 ↑↓ 切換。點任何燈格或圖會開浮動視窗，可以拖曳、縮放、最大化，也可以同時開兩個並排比對。
 6. 匯出：
-   - **匯出 PPT**：點燈表、HL trend、總覽 trend，WAT 和 Inline 都會包含
+   - **匯出 PPT**：封面、點燈表、HL 總表（所有 HL 一列一個）、HL 細節頁（預設只橘燈，可改全部）、總覽 trend；WAT／Inline／Yield 都會包含
    - **匯出 HTML**：one-page HTML
    - **列印／PDF**
    - **複製結論**：純文字
@@ -50,7 +51,7 @@ python make_BEOL_Analysis.py --no-samples     # 不產生範例資料
 
 ## 資料夾內容
 - `AGENTS.md`：接手文件（需求、判斷規則、架構、測試、待辦），給 AI agent 或新同事接續開發時閱讀。
-- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v2.7）。
+- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v2.9）。
 - `src/`：原始碼。
   - `src/report/rules_base.js`：診斷知識庫（資料）；`src/report/rules.js`：知識庫程式。
   - `src/report/engine.js`：計算。

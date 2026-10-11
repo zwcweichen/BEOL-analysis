@@ -1,7 +1,7 @@
 # BEOL_Analysis：Agent 接手文件
 
 > 給接手的 AI agent（或工程師）閱讀。讀完這份就能繼續開發，不必回頭看對話紀錄。
-> 版本：BEOL 分析戰報 **v2.7**（2026-10-11）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
+> 版本：BEOL 分析戰報 **v2.9**（2026-10-12）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
 
 ---
 
@@ -166,6 +166,8 @@ node tests/e2e_variants.js               # 21 項：沒為工具設計過的資�
 - v1.0：WAT 戰報（K-shift、點燈表、診斷、Trend、Correlation、HTML 匯出）
 - v2.0：改名 BEOL；LK 改用倍數＋log 軸；SPA 改用固定值異常比例；新增 Inline 模組（均值、W2W、WIW、徑向分布、對 WAT 的影響）
 - v2.1：點燈格只顯示數字；戰報頁可切換分組、比較欄、BSL、CIP；儀表板版面；Trend 矩陣；浮動視窗；PPT 匯出；強化不同欄名的解析；單一 Python 產生器
+- v2.9：PPT 自審——標題只寫現象（`dx.mean` 另存）、封面每燈號一行、HL 總表頁、細節頁預設只橘燈（`#pptDetail`）、rate 類不算 r、其他類別排最後
+- v2.8：其他類別（other_inline／other_yield，統計後綴自動歸類）；單一建議檢查清單＋檢查視窗（`openCheckWin`：X／Y、r 判定、共振 trend、匯入補進後自動重開）；`E.pearson`＋`R.relOf` 用 K 與 r 判定同層／鄰層（strong／weak／flat／opp），措辭不過度推論；長欄名縮寫；H 資料集
 - v2.7：可能原因依證據排序（`rankCauses`：cd／vcd／thk／xlayer／xcd／tool／ext 六類證據，✔／·／✘ 三態）；`App.XLAYER` 第 2 輪（rc←topo／cd、vbd←topo、cap←above）；跨層原因加入 base；文獻第 3 批（#21–#29）；比較欄先看值
 - v2.6：疑似因子表→交叉比對卡（Inline／跨層／機台／Yield）；建議檢查精簡；機台視窗改版（結論行、run 貨 %、每週 run 貨＋出現期間、K 標註在 box 上、最差排最左）；跨層知識 `App.XLAYER`＋`topo` 類別＋`R.relatedXLayer`；比較欄先看值；三角色自審流程；文獻第 2 批（#11–#20）
 - v2.5：引導式建議檢查（✔／○／➜／◇ 加一鍵動作）、機台分析視窗（run 貨比例、box plot、組合分組）、疑似因子 ΔK 判定
