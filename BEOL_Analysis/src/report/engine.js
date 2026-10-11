@@ -74,7 +74,11 @@
     const dates = cols.filter((c) => c.type === 'datetime');
     const dateCol = (dates.find((c) => /wat/i.test(c.name)) || dates[0] || {}).name || null;
     const cand = text.filter((c) => c.name !== waferCol && c.name !== lotCol && !/最終/.test(c.name));
-    const condCol = (pick(cand, /fab|bsl|cip|split|cond|route|eqp|tool|chamber|recipe/i, 2, 12) ||
+    // 1) a column whose VALUES look like condition labels (BSL／CIP／POR／baseline／ref／split…) wins over column names
+    const condVals = /^(bsl|cip|por|base|ref|new|split|cond|exp|test|ctrl|control|std)/i;
+    const byVal = cand.find((c) => { const u = uniq(rows, c.name); if (u < 2 || u > 12) return false; const vs = new Set(rows.map((r) => r[c.name]).filter((v) => v != null).map(String)); return [...vs].some((v) => condVals.test(v.trim())); });
+    const condCol = (byVal || pick(cand, /fab|bsl|cip|split|cond|route|eqp|tool|chamber|recipe|type/i, 2, 12) ||
+      cand.find((c) => { const u = uniq(rows, c.name); return u >= 2 && u <= 6 && !/part|product|prod|device|tech/i.test(c.name); }) ||
       cand.find((c) => { const u = uniq(rows, c.name); return u >= 2 && u <= 6; }) || {}).name || null;
     const groupCol = (pick(cand.filter((c) => c.name !== condCol), /part|product|prod|device|tech|^p\d|layer/i, 2, 30) || {}).name || '';
     const cfg = { waferCol, lotCol, dateCol, groupCol, condCol, baseline: null, cips: [], items: [] };
@@ -224,7 +228,8 @@
       const score = cell.metric === 'fold' ? Math.abs(Math.log2(cell.fold || 1)) * 2 : cell.metric === 'rate' ? Math.abs(cell.diff || 0) / 3 : Math.abs(cell.k || 0);
       if (it.kind === 'wat' && isAbn(cell.level)) {
         const rel = RU().relatedInline(it.name, it.cat, items).map((r) => ({ ...r, k: cells[r.item.name]?.[g]?.[c]?.k }));
-        findings.wat.push({ type: 'mean', cell, rel, score, dx: RU().diagnose(cell, rel) });
+        const xrel = (RU().relatedXLayer ? RU().relatedXLayer(it.name, it.cat, items) : []).map((r) => ({ ...r, k: cells[r.item.name]?.[g]?.[c]?.k }));
+        findings.wat.push({ type: 'mean', cell, rel, xrel, score, dx: RU().diagnose(cell, rel, xrel) });
       }
       if (it.kind === 'yield' && isAbn(cell.level)) {
         // cross-reference: abnormal WAT cells of the same group / CIP
@@ -444,6 +449,7 @@
       }
       L.push(`   ${f.dx.verdict}`);
       if (meta?.factor) { const fv = meta.factor(f); if (fv) L.push(`   ${fv}`); }
+      if (meta?.causes) { const cz = meta.causes(f); if (cz.length) L.push(`   可能原因（依證據排序）：${cz.join('、')}`); }
       L.push(`   建議檢查：${f.dx.checks.join('、')}`);
     });
     const na = res.naList[mode];

@@ -194,6 +194,28 @@
     return out;
   };
 
+  /** adjacent layer name: Mn below → M(n−1); Vn below → Mn, above → M(n+1); TM／TV 同理 */
+  R.adjLayer = (L, rel) => {
+    const m = (L || '').match(/^(TM|TV|M|V)(\d+)$/i); if (!m) return '';
+    const pre = m[1].toUpperCase(), n = +m[2], metal = pre === 'TM' ? 'TM' : pre === 'TV' ? 'TM' : 'M';
+    if (pre === 'M' || pre === 'TM') return rel === 'below' ? (n > 1 ? `${metal}${n - 1}` : '') : '';
+    return rel === 'below' ? `${metal}${n}` : `${metal}${n + 1}`;
+  };
+  /** cross-layer inline items for a WAT item: [{ item, sign, rel, layer, why, check }] (sign 0 = direction depends on pattern) */
+  R.relatedXLayer = (watName, watCat, items) => {
+    const L = R.layer(watName), tab = (window.App && App.XLAYER) || []; if (!L) return [];
+    const out = [];
+    for (const x of tab.filter((x) => x.wat === watCat)) {
+      const A = R.adjLayer(L, x.rel); if (!A) continue;
+      for (const it of items) {
+        if (it.kind !== 'inline' || it.cat !== x.inl || R.layer(it.name) !== A) continue;
+        const sub = (t) => t.replace(/\{B\}/g, A).replace(/\{A\}/g, A);
+        out.push({ item: it, sign: x.sign, rel: x.rel, layer: A, why: x.why, check: sub(x.check) });
+      }
+    }
+    return out;
+  };
+
   const fill = (s, L) => s.replace(/\{L\}/g, L || '該層');
 
   /**
@@ -201,7 +223,7 @@
    * cell: { item, group, cip, k, mean, bmean, n, bn, level }
    * related: [{ item, sign, k }]  (K of the paired inline items in the same group/CIP)
    */
-  R.diagnose = (cell, related) => {
+  R.diagnose = (cell, related, xrel) => {
     const cat = R.byId(cell.item.cat);
     const L = R.layer(cell.item.name);
     const dir = (cell.dir ?? cell.k) >= 0 ? 'up' : 'down';
@@ -230,13 +252,28 @@
     } else {
       verdict = `資料中沒有 ${L || '該層'} 的 inline 數據可交叉比對 → 建議調出 ${fill(d.checks[0] || 'inline 數據', L)} 確認。`;
     }
+    // cross-layer (v2.6): when the same layer does not explain the shift, look one layer down／up (CMP topography inheritance)
+    const xs = (xrel || []).filter((r) => r.k != null && isFinite(r.k) && Math.abs(r.k) >= 0.5);
+    const xOk = xs.filter((r) => r.sign === 0 || Math.sign(r.k) === Math.sign(cell.dir ?? cell.k) * r.sign);
+    let xline = '', xcauses = [], xchecks = [];
+    if (xOk.length && !consistent.length) {
+      const sameTxt = notMoving.length ? `同層 ${lst(notMoving)} 未偏移；` : opposite.length ? `同層 ${lst(opposite)} 反向；` : `無同層 inline；`;
+      verdict = `${sameTxt}跨層 ${lst(xOk)} 有偏移 → ${xOk[0].why}。`;
+      xline = verdict;
+      xcauses = [];   // base rules carry the cross-layer causes; evidence ranking lifts them (v2.7)
+      xchecks = [xOk[0].check];
+    } else if (xOk.length) {
+      xline = `跨層：${lst(xOk)}（${xOk[0].layer}）也有偏移，可能疊加。`;
+      xchecks = [xOk[0].check];
+    }
     return {
       title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${d.mean}（${cell.text || `K ${fmtK(cell.k)}`}）`,
       cat: cat.label,
-      causes: d.causes.map((c) => fill(c, L)),
-      checks: d.checks.map((c) => fill(c, L)),
-      verdict,
-      fallback: '若 inline 都正常 → 比對 CIP lot 的機台履歷（tool commonality），找出共同經過的 chamber／機台。',
+      causes: [...xcauses, ...d.causes.map((c) => fill(c, L))],
+      checks: xOk.length && !consistent.length ? [...xchecks, ...d.checks.map((c) => fill(c, L))] : [...d.checks.map((c) => fill(c, L)), ...xchecks],
+      verdict: verdict + (xline && xline !== verdict ? ' ' + xline : ''),
+      xline,
+      fallback: '若當層與鄰層 inline 都正常 → 比對 CIP lot 的機台履歷（tool commonality），找出共同經過的 chamber／機台。',
     };
   };
 })();

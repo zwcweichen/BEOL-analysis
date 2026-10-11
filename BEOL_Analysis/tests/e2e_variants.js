@@ -49,8 +49,8 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(st.cond === 'Split' && st.base === 'POR' && st.cips.join() === 'Thin_TaN', 'user format 1: condition Split, BSL POR');
     const k = await page.evaluate(() => __cell('Rc_TV2', '全部', 'Thin_TaN').k);
     ok(near(k, REF.rc_tv2), `Rc_TV2 K ${k.toFixed(2)} = pandas ${REF.rc_tv2.toFixed(2)}`);
-    const fx = await page.evaluate(() => [...document.querySelectorAll('.fact tr[data-fac]')].map((t) => ({ col: t.dataset.fac, hit: t.classList.contains('hit'), txt: t.innerText })));
-    ok(fx.length === 2 && !fx.some((x) => x.hit) && /條件本身/.test(fx[0].txt), 'whole-CIP shift (−9.5σ on both tools) is NOT blamed on a tool (ΔK 0.6σ)');
+    const fx = await page.evaluate(() => { const d = [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台'); return d ? { state: d.className.replace('xc ', ''), txt: d.querySelector('.xt').innerText } : null; });
+    ok(fx && fx.state !== 'ok' && /皆偏|非 tool-specific/.test(fx.txt), `whole-CIP shift (−9.5σ on both tools) is NOT blamed on a tool (${fx?.txt})`);
     await page.selectOption('#rGroup', 'TM1_CMP_Tool'); await page.waitForTimeout(600);
     ok(await page.evaluate(() => App.rpt.res.groups.length >= 2), 'user can regroup by any column (TM1_CMP_Tool)');
   });
@@ -99,6 +99,18 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     await page.setViewportSize({ width: 1366, height: 768 }); await page.waitForTimeout(600);
     ok(await page.evaluate(() => { const hl = document.querySelector('.pane.hl'); return hl.classList.contains('narrow') && hl.getBoundingClientRect().left > document.querySelector('.pane.ov').getBoundingClientRect().right - 2; }), '1366 px wide: HL pane narrows (single-column charts) but stays beside');
     await page.setViewportSize({ width: 1500, height: 950 });
+  });
+  await run(path.join(SD, 'variants', 'G_xlayer.xlsx'), async (page, st) => {
+    ok(st.cond === 'Lot_Type' && st.base === 'BSL' && st.cips.join() === 'CIP' && st.group === 'Product', 'condition detected from VALUES (BSL/CIP) even though Product has fewer levels');
+    ok(st.items['M2 DISH'] === 'topo/inline/k', 'dishing monitor classified as topography (inline)');
+    const v = await page.evaluate(() => { const f = App.rpt.res.findings.wat.find((x) => x.cell.item.name === 'Rs_M3'); const cards = [...document.querySelectorAll('.xcs .xc')].map((d) => d.className.replace('xc ', '') + ':' + d.innerText.replace(/\s+/g, ' '));
+      return { v: f.dx.verdict, c0: f.dx.causes[0], k0: f.dx.checks[0], cards, fig: document.querySelector('#hlDet .hd-figs .fig:nth-child(2) .ft')?.innerText || '' }; });
+    ok(/同層 .*未偏移；跨層 M2 (THK|DISH)/.test(v.v) && /topography/.test(v.v), `Rs_M3 verdict: same layer flat → cross-layer M2 explains (${v.v.slice(0, 60)}…)`);
+    ok(/M2 THK／dishing/.test(v.k0), 'cross-layer check listed first');
+    const cz = await page.evaluate(() => [...document.querySelectorAll('.czs li')].map((t) => t.className.replace('cz ', '') + ':' + t.innerText.replace(/\s+/g, ' ')));
+    ok(/^yes:✔ 下層 topography 繼承/.test(cz[0]) && /M2 DISH \+2\.8\dσ/.test(cz[0]) && cz.some((t) => /^no:✘ Cu 厚度偏薄/.test(t) && /M3 THK 未偏移/.test(t)), `causes ranked by evidence: ${cz[0]} … ${cz[cz.length - 1]}`);
+    ok(v.cards.some((t) => /^ok:跨層/.test(t) && /M2 DISH \+2\.\d+σ/.test(t)) && v.cards.some((t) => /^no:Inline/.test(t)) && v.cards.some((t) => /^need:機台/.test(t)), `cards: Inline ✘ / 跨層 ✔ / 機台 ○ (no tool columns does not block) → ${v.cards.join(' | ')}`);
+    ok(/Rs_M3 vs M2 DISH/.test(v.fig) && /跨層/.test(v.fig), `partner chart switches to the cross-layer item (${v.fig.split('\n')[0]})`);
   });
   await run(path.join(SD, 'variants', 'E_single_cond.xlsx'), async (page, st) => {
     ok(st.tab === 'tab-setup' && !st.hasRes, `single condition → no fake report, asks in setup (${st.msg.trim()})`);

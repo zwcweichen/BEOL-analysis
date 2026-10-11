@@ -8,7 +8,7 @@
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
     hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'date' }, corr: { y: null, x: null, group: '全部' } });
-  App.VERSION = '2.5';
+  App.VERSION = '2.7';
   const $ = (id) => document.getElementById(id);
   const esc = App.esc;
   const CIPC = ['#2a6fdb', '#e8590c', '#0f9d8a', '#b5179e', '#6741d9'];
@@ -121,7 +121,7 @@
       }
       applyGrain();
       const pct = Math.round(rep.rate * 100);
-      App.toast(`已連結 ${file.name}：主檔 ${rep.mainWafers} 片中 ${rep.matched} 片對到（${pct}%），新增 ${rep.columns.length} 個欄位${rep.pivoted ? '（長表已依站點轉成寬表）' : rep.collapsed ? '（多列已壓成每片一列）' : ''}（${Math.round(performance.now() - t0)} ms）`, pct < 50 ? 'err' : 'ok');
+      App.toast(`已連結 ${file.name}：主檔 ${rep.mainWafers} 片中 ${rep.matched} 片對到（${pct}%），新增 ${rep.columns.length} 個欄位${rep.pivoted ? '（長表已依站點轉成寬表）' : rep.collapsed ? '（多列已壓成每片一列）' : ''}`, pct < 50 ? 'err' : 'ok');
       renderMods();
       if (S.res) generate(); else renderSetup();
     } catch (e) { console.error(e); App.toast(`連結失敗：${e.message}`, 'err'); }
@@ -154,7 +154,7 @@
       applyGrain();
       $('fileChip').textContent = `${file.name} · ${ds.rows.length.toLocaleString()} 列`;
       $('fileChip').classList.add('ok');
-      App.toast(`已讀取 ${file.name}（${Math.round(performance.now() - t0)} ms）`, 'ok');
+      App.toast(`已讀取 ${file.name}`, 'ok');
       renderMods();
       if (validMsg()) { renderSetup(); showTab('setup'); App.toast('部分欄位需要確認，請檢查設定', 'err'); }
       else generate();
@@ -183,7 +183,7 @@
     ['btnHtml', 'btnPpt', 'btnPrint', 'btnCopy'].forEach((b) => ($(b).disabled = false));
     renderMods(); renderLegend(); renderSetup();
     showTab(current === 'setup' ? 'report' : current);
-    App.toast(`戰報完成：${S.res.items.length} 個 item × ${S.res.groups.length} 組（${Math.round(performance.now() - t0)} ms）`, 'ok');
+    App.toast(`戰報完成：${S.res.items.length} 個 item × ${S.res.groups.length} 組`, 'ok');
   }
 
   // ================================================================ legend bar (thresholds per module)
@@ -552,10 +552,15 @@
     const it = f.cell.item, g = f.cell.group;
     if (f.type === 'var') return f.which === 'wiw' && hasRadial(it.name) ? { kind: 'rad', title: `${short(it.name)} 徑向分布`, fig: radialFig(it.name, g, h, { compact }) } : null;
     if (it.kind === 'wat') {
-      const rel = f.rel.find((x) => x.k != null);
+      // partner = same-layer inline that lines up; else the strongest cross-layer item (v2.6); else the first same-layer item
+      const dir = Math.sign(f.cell.dir ?? f.cell.k);
+      const same = f.rel.find((x) => x.k != null && Math.abs(x.k) >= 0.5 && Math.sign(x.k) === dir * x.sign);
+      const xr = (f.xrel || []).filter((x) => x.k != null && Math.abs(x.k) >= 0.5 && (x.sign === 0 || Math.sign(x.k) === dir * x.sign)).sort((a, b) => Math.abs(b.k) - Math.abs(a.k))[0];
+      const rel = same || xr || f.rel.find((x) => x.k != null);
       if (!rel) return null;
-      const sg = rawSign(it.name, rel.sign), cf = corrFig(it.name, rel.item.name, g, h, compact), sc = cf.stats.find((s) => s.cond === '全部');
-      return { kind: 'corr', y: it.name, x: rel.item.name, title: `${short(it.name)} vs ${short(rel.item.name)}`, note: `r = ${sc.r != null ? sc.r.toFixed(2) : '—'}${cf.logNote ? '（log）' : ''}，預期${sg < 0 ? '負' : '正'}相關`, fig: cf };
+      const cf = corrFig(it.name, rel.item.name, g, h, compact), sc = cf.stats.find((s) => s.cond === '全部');
+      const expTxt = rel.sign === 0 ? '跨層，方向視 pattern 而定' : `預期${rawSign(it.name, rel.sign) < 0 ? '負' : '正'}相關${rel.layer ? '（跨層）' : ''}`;
+      return { kind: 'corr', y: it.name, x: rel.item.name, title: `${short(it.name)} vs ${short(rel.item.name)}`, note: `r = ${sc.r != null ? sc.r.toFixed(2) : '—'}${cf.logNote ? '（log）' : ''}，${expTxt}`, fig: cf };
     }
     const rel = f.rel.find((x) => x.cell && x.cell.level !== 'na');
     if (rel) {
@@ -670,21 +675,20 @@
     const f = S.res.findings[S.mode][S.hl[S.mode]]; if (!f) { host.innerHTML = ''; return; }
     const c = f.cell, lv = S.res.lvOf(f), dx = f.dx;
     const m1 = mainFig(f, 205), m2 = partnerFig(f, 205);
+    const xc = crossChecks(f);
     host.innerHTML = `<div class="hd-t"><span class="pill ${lv}">${LVZH[lv]} ${esc(fTxt(f))}</span><b>${esc(dx.title)}</b><span class="tag">${esc(dx.cat)}</span></div>
       <div class="nums">${numsHtml(f)}</div>
-      <div class="vd">${esc(dx.verdict)}</div>
+      <div class="xcs">${xc.map((x, i) => `<div class="xc ${x.state}" ${x.run ? `data-xc="${i}" title="點一下看圖"` : ''}><span class="xl">${esc(x.label)}</span><span class="xs">${x.icon}</span><span class="xt">${esc(x.text)}</span></div>`).join('')}</div>
       <div class="hd-figs ${m2 ? '' : 'one'}">
         <div class="fig" data-zoom="main"><div class="ft">${esc(m1.title)}<span class="zoom">⤢ 放大</span></div><div class="plot"></div></div>
         ${m2 ? `<div class="fig" data-zoom="partner"><div class="ft">${esc(m2.title)}${m2.note ? `<span class="muted small" style="font-weight:400">${esc(m2.note)}</span>` : ''}<span class="zoom">⤢ 放大</span></div><div class="plot"></div></div>` : ''}
       </div>
-      <div class="hd-txt"><div><div class="lab">可能原因</div><ul>${dx.causes.map((x) => `<li>${esc(x)}</li>`).join('') || '<li>—</li>'}</ul></div>
-        <div><div class="lab">建議檢查 <span class="muted" style="font-weight:400">（✔ 已有資料可直接看　○ 需要補資料　◇ 系統外確認）</span></div><ul class="cks">${[...dx.checks, dx.fallback].map((x, i) => { const h = checkHint(f, x); return `<li class="ck ${h.kind}"><span class="ci">${h.icon}</span>${esc(x)}${h.action ? ` <a href="#" data-ck="${i}">${esc(h.action)}</a>` : ''}${h.note ? `<span class="muted small"> ${esc(h.note)}</span>` : ''}</li>`; }).join('')}</ul></div></div>
-      ${factorHtml(f)}`;
-    host.querySelectorAll('[data-ck]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); const h = checkHint(f, [...dx.checks, dx.fallback][+a.dataset.ck]); if (h.run) h.run(); }));
+      <div class="hd-txt"><div><div class="lab">可能原因 <span class="muted" style="font-weight:400">（依證據排序：✔ 資料支持　✘ 資料不支持）</span></div><ul class="czs">${rankCauses(f).map(causeLi).join('') || '<li>—</li>'}</ul></div>
+        <div><div class="lab">建議檢查 <span class="muted" style="font-weight:400">（✔ 已自動比對　○ 缺資料　◇ 需人工）</span></div><ul class="cks">${dx.checks.map((x, i) => { const h = checkHint(f, x); return `<li class="ck ${h.kind}" title="${esc(h.note || { ok: '已有資料，點一下看圖', need: '需要補資料，點一下連結檔案', nav: '切到其他模組', ext: '系統外確認（SEM／TEM／recipe／log）' }[h.kind])}"><span class="ci">${h.icon}</span>${h.run ? `<a href="#" data-ck="${i}">${esc(x)}</a>` : esc(x)}</li>`; }).join('')}</ul><div class="muted small" style="margin-top:4px">${esc(dx.fallback)}</div></div></div>`;
+    host.querySelectorAll('[data-ck]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); const h = checkHint(f, dx.checks[+a.dataset.ck]); if (h.run) h.run(); }));
+    host.querySelectorAll('[data-xc]').forEach((d) => (d.onclick = () => xc[+d.dataset.xc].run()));
     const plots = host.querySelectorAll('.plot');
     requestAnimationFrame(() => { plotInto(plots[0], m1.fig, true); if (m2) plotInto(plots[1], m2.fig, true); });
-    host.querySelectorAll('[data-fac]').forEach((t) => (t.onclick = () => openToolWin(c.item.name, c.group, c.cip, t.dataset.fac)));
-    const tw = host.querySelector('[data-toolwin]'); if (tw) tw.onclick = (e) => { e.preventDefault(); openToolWin(c.item.name, c.group, c.cip, factors(f)[0]?.col); };
     host.querySelector('[data-zoom=main]').onclick = () => openCell(c.item.name, c.group, c.cip);
     if (m2) host.querySelector('[data-zoom=partner]').onclick = () => (m2.kind === 'corr' ? openCorrWin(m2.y, m2.x, c.group) : openCell(c.item.name, c.group, c.cip));
   }
@@ -705,7 +709,7 @@
       <h4><span class="pill ${lv}">${LVZH[lv]} ${esc(fTxt(f))}</span>${esc(dx.title)}<span class="tag">${esc(dx.cat)}</span></h4>
       <div class="nums">${numsHtml(f)}</div>
       <div class="vd">${esc(dx.verdict)}</div>
-      <div><div class="lab">可能原因</div><ul>${dx.causes.map((x) => `<li>${esc(x)}</li>`).join('') || '<li>—</li>'}</ul></div>
+      <div><div class="lab">可能原因（依證據排序）</div><ul class="czs">${rankCauses(f).map(causeLi).join('') || '<li>—</li>'}</ul></div>
       <div><div class="lab">建議檢查</div><ul>${dx.checks.map((x) => `<li>${esc(x)}</li>`).join('')}<li>${esc(dx.fallback)}</li></ul></div>
     </div>`;
   }
@@ -745,6 +749,13 @@
   }
 
   // ================================================================ tool analysis window: run rate per level + box plot, any column or combination of columns
+  /** datetime column that belongs to the picked step column (e.g. "M12_ECP Time" for "M12_ECP Tool"), else the report date */
+  function stepTimeCol(colName) {
+    const stem = colName.replace(/\s*(tool|eqp|equip|chamber|ch|machine|機台|腔)\s*$/i, '').replace(/[_\s-]+$/, '');
+    const dt = S.ds.columns.filter((c) => c.type === 'datetime');
+    return (stem && dt.find((c) => c.name.startsWith(stem)))?.name || S.cfg.dateCol || null;
+  }
+  const weekStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
   function openToolWin(item, group, cip, col) {
     const cell = S.res.cells[item]?.[group]?.[cip]; if (!cell) return;
     const cols = E.factorColumns(S.ds, S.cfg).map((c) => c.name);
@@ -752,41 +763,76 @@
     const at = S.res.groups.length > 1 ? ` @ ${esc(group)}` : '';
     const key = `tool|${item}|${group}|${cip}`;
     const sel = new Set([col && cols.includes(col) ? col : cols[0]]);
+    let scope = 'group';   // time view: this group only / all groups
     openWin(key, `機台分析：${esc(short(item))}${at} <span class="pill ${cell.level}">${esc(cip)} ${esc(shiftTxt(cell))}</span>`, (b) => {
       const draw = () => {
         const picked = cols.filter((c) => sel.has(c));
-        const r = S.res, c = S.cfg;
+        const r = S.res, c = S.cfg, th = r.th;
         const rowsG = (c.groupCol ? S.ds.rows.filter((x) => E.cat(x[c.groupCol]) === group) : S.ds.rows).filter((x) => num(x[item]) != null);
         const cRows = rowsG.filter((x) => r.cOf(x) === cip), bRows = rowsG.filter((x) => r.cOf(x) === c.baseline);
         const keyFn = (x) => { const parts = picked.map((p) => (x[p] == null || x[p] === '' ? null : E.cat(x[p]))); return parts.some((v) => v == null) ? null : parts.join(' × '); };
         const st = E.factorLevels(cRows, bRows, item, cell, keyFn);
-        const lvs = st.levels.slice().sort((a, b) => E.natCmp(a.v, b.v));
-        b.innerHTML = `<div class="tw-ctrl"><span class="lab">分組欄</span><span class="chips">${cols.map((x) => `<span class="chip ${sel.has(x) ? 'on' : ''}" data-tc="${esc(x)}">${esc(short(x))}</span>`).join('')}</span><span class="muted small">可複選 → 組合分組（例 機台 × chamber）</span></div>
-          <div class="tw-grid">
-            <div class="tw-left"><div class="ft">Run 貨比例（各 level 占該條件的 wafer 數）</div><div class="plot" id="twRate"></div>
-              <table class="tstat tw-tab"><tr><th>${esc(picked.map(short).join(' × '))}</th><th>BSL N（%）</th><th>${esc(cip)} N（%）</th><th>Mean</th><th>K vs BSL</th></tr>
-              ${lvs.map((l) => `<tr class="${st.worst && l.v === st.worst.v && l.n ? 'worst' : ''}"><td>${esc(l.v)}</td><td>${l.nB}（${Math.round(l.shareB * 100)}%）</td><td>${l.n}（${Math.round(l.shareC * 100)}%）</td><td>${f4(l.mean)}</td><td>${l.k != null ? `<span class="pill ${Math.abs(l.k) <= r.th.kG ? 'green' : Math.abs(l.k) <= r.th.kO ? 'yellow' : 'orange'}">${fmtK(l.k)}</span>` : '—'}</td></tr>`).join('')}</table>
-              <div class="small muted" style="margin-top:4px">${st.tested.length >= 2 ? `Kruskal–Wallis H = ${st.H.toFixed(2)}，p = ${fmtP(st.p)}，效果量 ε² = ${st.eps.toFixed(2)}，level 間最大差 ${st.spread.toFixed(2)}σ` : '可比較的 level 少於 2 個（每個 level 需 ≥ 3 片）'}${st.levels.some((l) => l.n && !l.nB) || st.levels.some((l) => l.nB && !l.n) ? '　⚠ 有 level 只出現在單一條件，機台與條件部分混淆' : ''}</div></div>
-            <div class="tw-right"><div class="ft">${esc(short(item))} 依 ${esc(picked.map(short).join(' × '))} 的分布（BSL 灰、${esc(cip)} 彩色）</div><div class="plot" id="twBox"></div></div>
-          </div>`;
+        const sgn = cell.dir >= 0 ? -1 : 1;
+        const lvs = st.levels.slice().sort((a, b2) => (a.k == null) - (b2.k == null) || sgn * ((a.k ?? 0) - (b2.k ?? 0)) || E.natCmp(a.v, b2.v));   // worst level first
+        const lvOf = (k) => (k == null ? 'na' : Math.abs(k) <= th.kG ? 'green' : Math.abs(k) <= th.kO ? 'yellow' : 'orange');
+        const LVC = { green: '#1e8e4e', yellow: '#a86b00', orange: '#d4580f', na: '#98a2b3' };
+        const tcol = stepTimeCol(picked[0]);
+        const allBad = st.tested.length >= 2 && st.tested.every((l) => l.k != null && Math.abs(l.k) > th.kO && Math.sign(l.k) === Math.sign(cell.k ?? cell.dir));
+        const isHit = st.tested.length >= 2 && st.spread >= 0.5 && st.spread >= 0.2 * Math.abs(cell.k ?? 0) && st.p < 0.1;
+        const verdict = st.tested.length < 2 ? '可比較的 level 少於 2 個（每個需 ≥ 3 片）' : allBad ? `${st.tested.length}/${st.tested.length} 台皆偏（非 tool-specific）→ 查上游製程` : isHit ? `${st.worst.v} ${fmtK(st.worst.k)}（CIP ${Math.round(st.worst.shareC * 100)}% 走 ${st.worst.v}），level 間差 ${st.spread.toFixed(1)}σ → 先查這台` : `各 level 差 ${st.spread.toFixed(1)}σ，偏移不集中在單一機台`;
+        const mixed = st.levels.some((l) => l.n && !l.nB) || st.levels.some((l) => l.nB && !l.n);
+        const small = lvs.filter((l) => l.n > 0 && l.n < 30).length;
+        const hitLv = isHit ? st.worst.v : null;
+        b.innerHTML = `<div class="tw-ctrl"><span class="lab">分組欄</span><span class="chips">${cols.map((x) => `<span class="chip ${sel.has(x) ? 'on' : ''}" data-tc="${esc(x)}">${esc(short(x))}</span>`).join('')}</span><span class="muted small">可複選 → 組合分組</span></div>
+          <div class="tw-v ${isHit ? 'hit' : allBad ? 'warn' : ''}"><b>${esc(verdict)}</b>${mixed ? '　⚠ 部分 level 只在單一條件出現' : ''}${small ? `　<span class="muted">（${small} 個 level 的 CIP 少於 30 片，K 參考即可）</span>` : ''}</div>
+          <div class="tw-top">
+            <div><div class="ft">Run 貨比例 <span class="muted" style="font-weight:400">各 level 占 BSL／${esc(cip)} 的 %</span></div><div class="plot" id="twRate"></div></div>
+            <div><div class="ft">每週 run 貨 <span class="muted" style="font-weight:400">BSL＋CIP 片數，淡底 = CIP 期間${tcol ? `，時間 = ${esc(tcol)}` : ''}</span><span class="spacer"></span>${c.groupCol ? `<span class="seg sm"><button data-sc="group" class="${scope === 'group' ? 'on' : ''}">只看 ${esc(group)}</button><button data-sc="all" class="${scope === 'all' ? 'on' : ''}">全部 wafer</button></span>` : ''}</div><div class="plot" id="twWeek"></div><div class="small muted" id="twSpan"></div></div>
+          </div>
+          <div class="tw-bot"><div class="ft">${esc(short(item))} 依 ${esc(picked.map(short).join(' × '))} <span class="muted" style="font-weight:400">最差 level 排最左；箱上 = ${esc(cip)} 相對 BSL 的 K；n = BSL／${esc(cip)}；灰帶 = BSL ±1σ</span></div><div class="plot" id="twBox"></div></div>`;
         b.querySelectorAll('[data-tc]').forEach((x) => (x.onclick = () => { const n = x.dataset.tc; if (sel.has(n)) { if (sel.size > 1) sel.delete(n); } else sel.add(n); draw(); }));
-        // run-rate bars
+        b.querySelectorAll('[data-sc]').forEach((x) => (x.onclick = () => { scope = x.dataset.sc; draw(); }));
         const col0 = cipColor(cip);
+        // --- run-rate (% only, counts on hover)
         Plotly.newPlot(b.querySelector('#twRate'), [
-          { type: 'bar', name: `BSL ${c.baseline}`, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareB * 100), marker: { color: BSLC }, text: lvs.map((l) => l.nB), textposition: 'outside', hovertemplate: '%{x}<br>%{y:.0f}%（%{text} 片）<extra>BSL</extra>' },
-          { type: 'bar', name: cip, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareC * 100), marker: { color: col0 }, text: lvs.map((l) => l.n), textposition: 'outside', hovertemplate: `%{x}<br>%{y:.0f}%（%{text} 片）<extra>${esc(cip)}</extra>` },
-        ], { ...baseLayout(190), barmode: 'group', yaxis: { ...baseLayout(0).yaxis, title: { text: '% of wafer', font: { size: 10 } }, range: [0, 110] }, margin: { l: 44, r: 8, t: 8, b: 34 } }, CFG);
-        // box plot
+          { type: 'bar', name: `BSL ${c.baseline}`, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareB * 100), marker: { color: BSLC }, text: lvs.map((l) => `${Math.round(l.shareB * 100)}%`), textposition: 'outside', textfont: { size: 10 }, customdata: lvs.map((l) => l.nB), hovertemplate: '%{x}<br>%{y:.0f}%（%{customdata} 片）<extra>BSL</extra>' },
+          { type: 'bar', name: cip, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareC * 100), marker: { color: col0 }, text: lvs.map((l) => `${Math.round(l.shareC * 100)}%`), textposition: 'outside', textfont: { size: 10 }, customdata: lvs.map((l) => l.n), hovertemplate: `%{x}<br>%{y:.0f}%（%{customdata} 片）<extra>${esc(cip)}</extra>` },
+        ], { ...baseLayout(200), barmode: 'group', xaxis: { ...baseLayout(0).xaxis, categoryorder: 'array', categoryarray: lvs.map((l) => l.v) }, yaxis: { ...baseLayout(0).yaxis, title: { text: '% of wafer', font: { size: 10 } }, range: [0, 118], showgrid: false }, margin: { l: 40, r: 8, t: 8, b: 40 }, legend: { orientation: 'h', x: 0, y: 1.12, font: { size: 10 } } }, { ...CFG, displayModeBar: false });
+        // --- weekly run-rate: stacked counts per level, all conditions in scope
+        const wk = b.querySelector('#twWeek');
+        if (tcol) {
+          const rowsT = (scope === 'all' || !c.groupCol ? S.ds.rows : S.ds.rows.filter((x) => E.cat(x[c.groupCol]) === group)).filter((x) => x[tcol] instanceof Date && keyFn(x) != null);
+          const weeks = new Map(), lvSet = new Set();
+          for (const x of rowsT) { const w = weekStart(x[tcol]).getTime(), k = keyFn(x); lvSet.add(k); if (!weeks.has(w)) weeks.set(w, new Map()); weeks.get(w).set(k, (weeks.get(w).get(k) || 0) + 1); }
+          const ws = [...weeks.keys()].sort((a, b2) => a - b2), lvAll = [...lvSet].sort(E.natCmp);
+          const PAL = ['#4c78a8', '#72b7b2', '#9d755d', '#8b6fc9', '#54a24b', '#bab0ac', '#79706e', '#1f77b4', '#17becf', '#6b8e23'];
+          const colOf = (k, i) => (k === hitLv ? '#d4580f' : PAL[i % PAL.length]);
+          const tr = lvAll.map((k, i) => ({ type: 'bar', name: k, x: ws.map((w) => new Date(w)), y: ws.map((w) => weeks.get(w).get(k) || 0), marker: { color: colOf(k, i) }, hovertemplate: `%{x|%Y-%m-%d} 週<br>${esc(k)}：%{y} 片<extra></extra>` }));
+          const cT = rowsT.filter((x) => r.cOf(x) === cip).map((x) => x[tcol].getTime());
+          const LW = { ...baseLayout(200), barmode: 'stack', margin: { l: 40, r: 8, t: 8, b: 40 }, legend: { orientation: 'h', x: 0, y: 1.12, font: { size: 10 } }, xaxis: { ...baseLayout(0).xaxis, type: 'date', tickformat: '%m/%d' }, yaxis: { ...baseLayout(0).yaxis, title: { text: '片數／週', font: { size: 10 } } } };
+          if (cT.length) LW.shapes = [{ type: 'rect', xref: 'x', yref: 'paper', x0: weekStart(new Date(Math.min(...cT))), x1: new Date(weekStart(new Date(Math.max(...cT))).getTime() + 7 * 864e5), y0: 0, y1: 1, fillcolor: col0, opacity: 0.08, line: { width: 0 }, layer: 'below' }];
+          Plotly.newPlot(wk, tr, LW, { ...CFG, displayModeBar: false });
+          // first / last appearance per level → spot tools that went down or came online
+          const endT = Math.max(...rowsT.map((x) => x[tcol].getTime())), fmtD = (t) => App.fmtDate(new Date(t)).slice(5, 10);
+          b.querySelector('#twSpan').innerHTML = '出現期間：' + lvAll.map((k) => { const ts = rowsT.filter((x) => keyFn(x) === k).map((x) => x[tcol].getTime()); const a = Math.min(...ts), z = Math.max(...ts); const down = endT - z > 21 * 864e5, fresh = a - Math.min(...rowsT.map((x) => x[tcol].getTime())) > 21 * 864e5; return `<span style="${k === hitLv ? 'color:#d4580f;font-weight:600' : ''}">${esc(k)} ${fmtD(a)}～${fmtD(z)}${down ? '（已停）' : ''}${fresh ? '（後期加入）' : ''}</span>`; }).join('　');
+        } else wk.innerHTML = '<div class="empty" style="padding:30px">沒有時間欄位，無法畫每週 run 貨</div>';
+        // --- box plot with K annotations per level and n under the tick labels
         const traces = [];
         for (const [cd, rr, colr] of [[c.baseline, bRows, BSLC], [cip, cRows, col0]]) {
           const xs = [], ys = [];
           rr.forEach((x) => { const k = keyFn(x); if (k != null) { xs.push(k); ys.push(x[item]); } });
           traces.push({ type: 'box', name: cd === c.baseline ? `BSL ${cd}` : cd, x: xs, y: ys, marker: { color: colr, size: 3 }, line: { color: cd === c.baseline ? '#7a8594' : colr }, fillcolor: cd === c.baseline ? 'rgba(154,163,174,.25)' : colr + '33', boxpoints: 'all', jitter: 0.5, pointpos: 0, boxmean: true, hoverinfo: 'y+name' });
         }
-        const L = baseLayout(420); L.boxmode = 'group'; L.xaxis.categoryorder = 'array'; L.xaxis.categoryarray = lvs.map((l) => l.v); L.yaxis.title = axTitle(item, isLog(item) ? '，log' : ''); if (isLog(item)) L.yaxis.type = 'log'; L.margin = { l: 50, r: 8, t: 8, b: 40 };
+        const L = baseLayout(420); L.boxmode = 'group'; L.xaxis.categoryorder = 'array'; L.xaxis.categoryarray = lvs.map((l) => l.v);
+        L.xaxis.tickvals = lvs.map((l) => l.v); L.xaxis.ticktext = lvs.map((l) => `${l.v}<br><span style="font-size:10px;color:${l.n && l.n < 30 ? '#b0b7c3' : '#667085'}">n ${l.nB} / ${l.n}</span>`);
+        L.yaxis.title = axTitle(item, isLog(item) ? '，log' : ''); if (isLog(item)) L.yaxis.type = 'log'; L.margin = { l: 50, r: 8, t: 34, b: 48 };
+        L.legend = { orientation: 'h', x: 0, y: 1.1, font: { size: 10.5 } };
+        // K label just above each CIP box (upper whisker), not on a fixed line
+        const top = (v) => { const a = cRows.filter((x) => keyFn(x) === v).map((x) => x[item]).sort((p, q) => p - q); if (!a.length) return null; const q1 = a[Math.floor(a.length * 0.25)], q3 = a[Math.floor(a.length * 0.75)]; const hi = q3 + 1.5 * (q3 - q1); return Math.max(...a.filter((y) => y <= hi)); };
+        L.annotations = lvs.filter((l) => l.k != null).map((l) => ({ x: l.v, y: isLog(item) ? Math.log10(top(l.v)) : top(l.v), xshift: 16, yshift: 6, yanchor: 'bottom', showarrow: false, text: `<b>${fmtK(l.k)}</b>`, font: { size: 11.5, color: LVC[lvOf(l.k)], family: 'Consolas, monospace' }, bgcolor: 'rgba(255,255,255,.9)', bordercolor: LVC[lvOf(l.k)], borderwidth: 1, borderpad: 2 }));
         if (cell.bmean != null && cell.bsd > 0 && !isLog(item)) L.shapes = [{ type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: cell.bmean - cell.bsd, y1: cell.bmean + cell.bsd, fillcolor: '#e9edf2', opacity: 0.6, line: { width: 0 }, layer: 'below' }, { type: 'line', xref: 'paper', x0: 0, x1: 1, y0: cell.bmean, y1: cell.bmean, line: { color: '#6b7684', width: 1.2, dash: 'dash' } }];
         delete L.height; L.autosize = true;
-        Plotly.newPlot(b.querySelector('#twBox'), traces, L, CFG);
+        Plotly.newPlot(b.querySelector('#twBox'), traces, L, { ...CFG, displayModeBar: false });
       };
       draw();
     }, { wide: true });
@@ -800,32 +846,102 @@
     if (!factorCache.has(key)) factorCache.set(key, E.scanFactors(S.ds, S.cfg, c.item.name, c.group, c.cip, c));
     return factorCache.get(key);
   }
+  /** evidence tag of one cause sentence (keyword map; fab rules only need to use the same words) */
+  const CAUSE_EV = [
+    [/via\s*cd|底部接觸/i, 'vcd'],
+    [/cd|線寬|space|間距|trim|litho|dose|focus|etch bias|hardmask|開口/i, 'cd'],
+    [/下層寬線|stress-induced|unlanded/i, 'xcd'],
+    [/topography|繼承|跨層|下層 dishing/i, 'xlayer'],
+    [/厚度|thk|cmp|過拋|dishing|erosion|研磨|trench 深|深度|研磨不足/i, 'thk'],
+    [/機台|chamber|pad|slurry|電鍍|ecp|pvd|recipe|matching|mismatch|壽命|life/i, 'tool'],
+  ];
+  const causeTag = (txt, viaItem) => { for (const [rx, t] of CAUSE_EV) if (rx.test(txt)) return t === 'cd' && viaItem ? 'vcd' : t; return 'ext'; };
+  /**
+   * Rank causes by evidence (v2.7): yes = data supports, no = data exists and contradicts (greyed), na = no data／outside the tool.
+   * Order: yes → na → no; original knowledge-base order kept within a tier.
+   */
+  function rankCauses(f) {
+    const c = f.cell, it = c.item, dx = f.dx, dir = Math.sign(c.dir ?? c.k) || 1, viaItem = /^v/i.test(RU.layer(it.name) || '') || it.cat === 'rc';
+    const ev = {};
+    const judge = (rs) => { if (!rs.length) return null; const ok = rs.filter((r) => Math.abs(r.k) >= 0.5 && (r.sign === 0 || Math.sign(r.k) === dir * r.sign)).sort((a, b) => Math.abs(b.k) - Math.abs(a.k))[0]; if (ok) return { st: 'yes', note: `${short(ok.item.name)} ${fmtK(ok.k)}` }; const flat = rs[0]; return { st: 'no', note: `${short(flat.item.name)} ${Math.abs(flat.k) < 0.5 ? '未偏移' : '反向'}` }; };
+    const rel = (f.rel || []).filter((r) => r.k != null);
+    if (it.kind === 'wat') {
+      ev.cd = judge(rel.filter((r) => r.item.cat === 'cd')); ev.vcd = judge(rel.filter((r) => r.item.cat === 'vcd'));
+      if (!ev.vcd && ev.cd) ev.vcd = ev.cd; if (!ev.cd && ev.vcd) ev.cd = ev.vcd;
+      ev.thk = judge(rel.filter((r) => r.item.cat === 'thk'));
+      const xr = (f.xrel || []).filter((r) => r.k != null);
+      ev.xlayer = judge(xr.filter((r) => r.item.cat !== 'cd')); ev.xcd = judge(xr.filter((r) => r.item.cat === 'cd'));
+    }
+    // inline items: the same-layer WAT reaction does not discriminate between dimensional causes → only tool evidence is used
+    try { const fs = factors(f); if (fs.length) { const hit = fs.find((x) => x.hit); ev.tool = hit ? { st: 'yes', note: `${short(hit.col)}：${hit.worst.v}` } : fs.every((x) => x.confound) ? null : { st: 'no', note: '機台無集中' }; } } catch (e) { /* no tool columns */ }
+    const rows = dx.causes.map((text, i) => { const tag = causeTag(text, viaItem), e = ev[tag]; return { text, tag, st: e ? e.st : 'na', note: e ? e.note : '', i }; });
+    const ord = { yes: 0, na: 1, no: 2 };
+    return rows.sort((a, b) => ord[a.st] - ord[b.st] || a.i - b.i);
+  }
+  const causeLi = (r) => `<li class="cz ${r.st}" title="${r.st === 'yes' ? '資料支持：' + esc(r.note) : r.st === 'no' ? '資料不支持：' + esc(r.note) : '無資料可比對'}">${r.st === 'yes' ? '<span class="ci">✔</span>' : r.st === 'no' ? '<span class="ci">✘</span>' : '<span class="ci">·</span>'}${esc(r.text)}${r.note ? `<span class="cn">${esc(r.note)}</span>` : ''}</li>`;
+  const causeTxt = (f) => rankCauses(f).map((r) => r.st === 'yes' ? `${r.text}（✔ ${r.note}）` : r.st === 'no' ? `${r.text}（✘ ${r.note}）` : r.text);
   const fmtP = (p) => (p == null ? '—' : p < 0.001 ? '<0.001' : p.toFixed(3));
-  /** one-line conclusion for the top factor (used by the HL panel, PPT and summary text) */
+  /** quick Pearson r of two items within a group (no plotting) */
+  function quickR(y, x, group) {
+    const rows = (S.res.byG.get(group) || S.ds.rows).filter((q) => num(q[y]) != null && num(q[x]) != null);
+    if (rows.length < 4) return null;
+    const ly = isLog(y), lx = isLog(x);
+    const f = App.statsLib.linreg(rows.map((q) => (lx ? Math.log10(q[x]) : q[x])), rows.map((q) => (ly ? Math.log10(q[y]) : q[y])));
+    return f.r ?? null;
+  }
+  /** tool cross-check conclusion (HL strip, PPT, summary text). Statistics stay inside; wording is what an engineer says. */
   function factorVerdict(f) {
     const fs = factors(f); if (!fs.length) return '';
-    const top = fs.find((x) => x.eps != null && !x.confound);
-    const conf = fs.filter((x) => x.confound);
-    const parts = [];
-    if (top && top.hit) parts.push(`疑似因子 ${short(top.col)} = ${top.worst.v}（${top.worst.n} 片，K ${fmtK(top.worst.k)}，p ${fmtP(top.pAdj)}）`);
-    else if (top) parts.push(`已掃描 ${fs.length} 個類別欄，沒有單一機台／因子能解釋偏移（最高 ${short(top.col)}，p ${fmtP(top.pAdj)}）`);
-    if (conf.length) parts.push(`${conf.map((x) => short(x.col)).join('、')} 與條件完全混淆，無法分辨`);
-    return parts.join('；');
+    const c = f.cell, th = S.res.th, hits = fs.filter((x) => x.hit), conf = fs.filter((x) => x.confound);
+    if (hits.length) { const t = hits[0]; return `${short(t.col)}：${t.worst.v} ${fmtK(t.worst.k)}（CIP ${Math.round(t.worst.shareC * 100)}% 走 ${t.worst.v}，n ${t.worst.n}）${hits.length > 1 ? `；${hits.slice(1).map((x) => short(x.col)).join('、')} 亦有差異` : ''}`; }
+    const top = fs.find((x) => !x.confound && x.tested.length >= 2);
+    if (top && top.tested.every((l) => l.k != null && Math.abs(l.k) > th.kO && Math.sign(l.k) === Math.sign(c.k ?? c.dir))) return `${short(top.col)} ${top.tested.length}/${top.tested.length} 台皆偏（非 tool-specific）→ 查上游製程`;
+    if (conf.length && conf.length === fs.length) return `${conf.map((x) => short(x.col)).join('、')} 與條件完全混淆，無法分辨`;
+    return `${fs.length} 個機台欄皆無集中${conf.length ? `（${conf.map((x) => short(x.col)).join('、')} 與條件混淆）` : ''}`;
   }
-  function factorHtml(f) {
-    const c = f.cell;
+  /** cross-check cards: inline ↔ WAT, tool, yield — one line each, three states (ok 對上／warn 部分或反向／no 未對上／need 缺資料), click opens the chart */
+  function crossChecks(f) {
+    const c = f.cell, it = c.item, g = c.group, cip = c.cip, out = [];
+    const card = (label, state, text, run) => out.push({ label, state, icon: { ok: '✔', warn: '△', no: '✘', need: '○' }[state], text, run });
+    const rTxt = (y, x) => { const r = quickR(y, x, g); return r == null ? '' : `，r = ${r.toFixed(2)}`; };
+    if (it.kind === 'wat') {
+      const rel = (f.rel || []).filter((r) => r.k != null);
+      if (rel.length) {
+        const exp = (r) => Math.sign(c.dir ?? c.k) * r.sign;
+        const same = rel.filter((r) => Math.abs(r.k) >= 0.5 && Math.sign(r.k) === exp(r)), opp = rel.filter((r) => Math.abs(r.k) >= 0.5 && Math.sign(r.k) !== exp(r)), flat = rel.filter((r) => Math.abs(r.k) < 0.5);
+        const txt = (a) => a.map((r) => `${short(r.item.name)} ${fmtK(r.k)}`).join('、');
+        if (same.length) card('Inline', 'ok', `${txt(same)}${rTxt(it.name, same[0].item.name)}`, () => openCorrWin(it.name, same[0].item.name, g));
+        else if (opp.length) card('Inline', 'warn', `${txt(opp)} 反向${rTxt(it.name, opp[0].item.name)}`, () => openCorrWin(it.name, opp[0].item.name, g));
+        else card('Inline', 'no', `${txt(flat)} 未偏移`, () => openCorrWin(it.name, flat[0].item.name, g));
+      } else card('Inline', 'need', `無 ${RU.layer(it.name) || '同層'} CD／THK`, () => $('file2').click());
+      // cross-layer card (only when adjacent-layer inline data exists; silent otherwise to keep the strip clean)
+      const xr = (f.xrel || []).filter((r) => r.k != null);
+      if (xr.length) {
+        const mov = xr.filter((r) => Math.abs(r.k) >= 0.5 && (r.sign === 0 || Math.sign(r.k) === Math.sign(c.dir ?? c.k) * r.sign)).sort((a, b) => Math.abs(b.k) - Math.abs(a.k));
+        const same = rel.some((r) => r.k != null && Math.abs(r.k) >= 0.5 && Math.sign(r.k) === Math.sign(c.dir ?? c.k) * r.sign);
+        if (mov.length) card('跨層', same ? 'warn' : 'ok', `${mov.map((r) => `${short(r.item.name)} ${fmtK(r.k)}`).join('、')}${same ? '（疊加）' : ' → 下層 topography 繼承'}${rTxt(it.name, mov[0].item.name)}`, () => openCorrWin(it.name, mov[0].item.name, g));
+        else card('跨層', 'no', `${xr.map((r) => short(r.item.name)).join('、')} 未偏移`, () => openCorrWin(it.name, xr[0].item.name, g));
+      }
+    }
+    if (it.kind === 'inline') {
+      const rel = (f.rel || []).filter((r) => r.cell && r.cell.level !== 'na');
+      if (rel.length) { const hit = rel.filter((r) => isAbnL(r.cell.level)); card('WAT', hit.length ? 'ok' : 'no', hit.length ? `${hit.map((r) => `${short(r.item.name)} ${shiftTxt(r.cell)}`).join('、')}` : `${rel.map((r) => short(r.item.name)).join('、')} 未亮燈`, () => openCorrWin(rel[0].item.name, it.name, g)); }
+      else card('WAT', 'need', `無 ${RU.layer(it.name) || '同層'} WAT`, () => $('file2').click());
+    }
+    if (it.kind === 'yield') {
+      const rel = f.rel || [];
+      if (rel.length) card('WAT', 'ok', rel.map((r) => `${short(r.item.name)} ${r.cell.text}`).join('、'), () => openCorrWin(rel[0].item.name, it.name, g));
+      else card('WAT', hasKind('wat') ? 'no' : 'need', hasKind('wat') ? '同組 WAT 未亮燈' : '無 WAT 資料', hasKind('wat') ? () => setMode('wat') : () => $('file2').click());
+    }
     const fs = factors(f);
-    if (!fs.length) return `<div class="fac"><div class="lab">疑似因子（機台／chamber／route…）</div><div class="muted small">資料中沒有機台、chamber、route 等類別欄。用上方「＋ 連結資料」把機台履歷連進來（以 wafer id 對應），這裡會自動掃描哪個因子最能解釋 ${esc(short(c.item.name))} 的偏移。</div></div>`;
-    const rows = fs.slice(0, 6).map((x) => `<tr class="${x.confound ? 'cf' : x.hit ? 'hit' : ''}" data-fac="${esc(x.col)}" title="點一下開機台分析（run 貨比例＋box plot）">
-        <td>${esc(short(x.col))}<span class="muted"> ${x.nLevels} level</span></td>
-        <td>${x.worst ? `<b>${esc(x.worst.v)}</b> <span class="muted">${x.worst.n} 片</span>` : '—'}</td>
-        <td class="mono">${x.worst?.k != null ? fmtK(x.worst.k) : '—'}</td>
-        <td class="mono">${x.spread != null ? x.spread.toFixed(2) + 'σ' : '—'}</td>
-        <td class="mono">${x.eps != null ? x.eps.toFixed(2) : '—'}</td><td class="mono">${fmtP(x.pAdj)}</td>
-        <td class="small">${esc(x.note || (x.hit ? '各 level 有顯著差異，先查這個因子' : ''))}</td></tr>`).join('');
-    return `<div class="fac"><div class="lab">疑似因子（機台／chamber／route…）<span class="muted" style="font-weight:400">　在 ${esc(c.cip)} 的 wafer 內，依每個類別欄分組做 Kruskal–Wallis 檢定；p 已做 BH 校正；K 為最差 level 相對 BSL，ΔK 為 level 間最大差</span><a href="#" class="zoom" data-toolwin>⤢ 機台分析（run 貨比例、box plot、自訂組合）</a></div>
-      <table class="fact"><tr><th>欄位</th><th>最差 level</th><th>K</th><th>ΔK</th><th>效果量 ε²</th><th>p（校正）</th><th>說明</th></tr>${rows}</table>
-      ${fs.length > 6 ? `<div class="muted small">另有 ${fs.length - 6} 個欄位效果較小，未列出。</div>` : ''}</div>`;
+    if (fs.length) { const hit = fs.find((x) => x.hit); const v = factorVerdict(f); card('機台', hit ? 'ok' : /皆偏/.test(v) ? 'warn' : fs.every((x) => x.confound) ? 'warn' : 'no', v, () => openToolWin(it.name, g, cip, (hit || fs[0]).col)); }
+    else card('機台', 'need', '無機台／chamber 欄', () => $('file2').click());
+    if (it.kind === 'wat' && hasKind('yield')) {
+      const ys = S.res.items.filter((x) => x.kind === 'yield').map((x) => ({ item: x, cell: S.res.cells[x.name]?.[g]?.[cip] })).filter((r) => r.cell && r.cell.level !== 'na');
+      const hit = ys.filter((r) => isAbnL(r.cell.level));
+      if (ys.length) card('Yield', hit.length ? 'ok' : 'no', hit.length ? hit.map((r) => `${short(r.item.name)} ${shiftTxt(r.cell)}`).join('、') : 'yield／bin 未亮燈', () => openCorrWin(it.name, (hit[0] || ys[0]).item.name, g));
+    }
+    return out;
   }
   // ================================================================ floating windows (non-modal, draggable, resizable, many at once)
   const WM = { z: 200, n: 0, wins: new Map() };
@@ -1190,7 +1306,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${r.naList[mode
           { text: f.dx.verdict, options: { fontSize: 11.5, bold: true, color: NAVY, breakLine: true } }, gap,
           ...(factorVerdict(f) ? [{ text: factorVerdict(f), options: { fontSize: 10.5, color: '7A3E00', breakLine: true } }, gap] : []),
           { text: '可能原因', options: { fontSize: 11, bold: true, color: '667085', breakLine: true } },
-          ...f.dx.causes.slice(0, 4).map((x) => ({ text: x, options: { bullet: true, fontSize: 10.5, breakLine: true } })), gap,
+          ...rankCauses(f).slice(0, 4).map((r) => ({ text: (r.st === 'yes' ? '✔ ' : r.st === 'no' ? '✘ ' : '') + r.text + (r.note ? `（${r.note}）` : ''), options: { bullet: true, fontSize: 10.5, breakLine: true, color: r.st === 'no' ? '9AA3AE' : r.st === 'yes' ? NAVY : '333333' } })), gap,
           { text: '建議檢查', options: { fontSize: 11, bold: true, color: '667085', breakLine: true } },
           ...f.dx.checks.slice(0, 4).map((x) => ({ text: x, options: { bullet: true, fontSize: 10.5, breakLine: true } })),
         ], { x: 7.95, y: 1.45, w: 4.98, h: 5.45, fontFace: FONT, valign: 'top', color: '1C2430', fit: 'shrink', margin: 6, fill: { color: 'F7F9FC' } });
@@ -1339,7 +1455,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${r.naList[mode
   }
 
   // ================================================================ copy
-  const summary = () => E.summaryText(S.res, S.cfg, { file: S.file, factor: factorVerdict }, S.mode);
+  const summary = () => E.summaryText(S.res, S.cfg, { file: S.file, factor: factorVerdict, causes: causeTxt }, S.mode);
   async function copySummary() {
     const txt = summary();
     try { await navigator.clipboard.writeText(txt); }

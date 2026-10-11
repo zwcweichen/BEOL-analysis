@@ -334,3 +334,32 @@ code { background: var(--soft); padding: 0 4px; border-radius: 4px; font-family:
 .tw-left #twRate { height: 190px; }
 .tw-tab tr.worst td { background: #fff4ec; font-weight: 600; }
 .tw-grid .ft { font-size: 12.5px; font-weight: 600; padding: 2px 4px; }
+/* ---- v2.6 cross-check strip, compact checks, tool window ---- */
+.xcs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+.xc { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 3px 10px 3px 8px; font-size: 12.5px; background: #fff; }
+.xc[data-xc] { cursor: zoom-in; } .xc[data-xc]:hover { border-color: var(--blue); }
+.xc .xl { font-weight: 700; color: #1f3b63; } .xc .xs { font-weight: 700; } .xc .xt { color: var(--ink); }
+.xc.ok { background: var(--g-bg); border-color: #b8e2c7; } .xc.ok .xs { color: var(--g); }
+.xc.warn { background: var(--y-bg); border-color: #f1d08a; } .xc.warn .xs { color: var(--y); }
+.xc.no { background: var(--soft); } .xc.no .xs { color: var(--na); } .xc.no .xt { color: var(--muted); }
+.xc.need { border-style: dashed; } .xc.need .xs { color: var(--o); } .xc.need .xt { color: var(--muted); }
+.cks li a { margin-left: 0; font-size: inherit; color: var(--ink); text-decoration: underline dotted var(--blue); text-underline-offset: 3px; }
+.cks li a:hover { color: var(--blue); }
+.tw-v { font-size: 13px; color: var(--muted); padding: 4px 8px; margin: 0 0 6px; border-left: 3px solid var(--line); background: var(--soft); border-radius: 0 6px 6px 0; }
+.tw-v.hit { color: var(--o); border-left-color: var(--o); background: #fff4ec; } .tw-v.warn { color: var(--y); border-left-color: #e3b341; background: var(--y-bg); }
+.tw-top { display: grid; grid-template-columns: 1fr 1.3fr; gap: 10px; }
+.tw-top .plot { height: 200px; }
+.tw-top .ft, .tw-bot .ft { display: flex; gap: 6px; align-items: center; font-size: 12.5px; font-weight: 600; padding: 2px 4px; }
+.tw-bot { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tw-bot .plot { flex: 1; min-height: 260px; }
+.fw-b { overflow: auto; }
+.xc.no .xs { color: #98a2b3; }
+
+/* v2.7 evidence-ranked causes */
+.czs{list-style:none;padding-left:0;margin:0}
+.czs li.cz{display:flex;gap:6px;align-items:baseline;line-height:1.45}
+.czs li.cz .ci{flex:0 0 14px;text-align:center;font-size:11px;color:#9aa3ae}
+.czs li.cz.yes{font-weight:600;color:#1f2a3c}.czs li.cz.yes .ci{color:#1a9d5a}
+.czs li.cz.no{color:#9aa3ae}.czs li.cz.no .ci{color:#c74b4b}
+.czs li.cz .cn{font-weight:400;color:#7a8594;font-size:11.5px;margin-left:4px}
+.czs li.cz.yes .cn{color:#1a9d5a}

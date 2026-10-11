@@ -11,12 +11,12 @@
  */
 window.App = window.App || {};
 window.App.RULES_BASE = {
-  version: '2.3', date: '2026-10-09', author: 'base', layer: 'base',
+  version: '2.7', date: '2026-10-11', author: 'base', layer: 'base',
   rules: [
     { id: 'rs', label: 'Rs（金屬線阻值）', kind: 'wat', metric: 'k', bad: 'up',
       name: 'con_*;con-*;rs_*;rs-*;rsh_*;rsq_*;sheet_*;r_m#*;rm#*;*serp*', unit: 'ohm/sq;Ω/sq;ohm/□',
       up_mean: '金屬線變細或變薄',
-      up_causes: ['Cu 厚度偏薄（CMP 過拋、dishing／erosion）', '線寬 CD 偏小（litho／trench etch）', 'Barrier／liner 偏厚，Cu 截面變小', 'Cu 電鍍異常（void、晶粒偏小）'],
+      up_causes: ['Cu 厚度偏薄（CMP 過拋、dishing／erosion）', '線寬 CD 偏小（litho／trench etch）', 'Barrier／liner 偏厚，Cu 截面變小', 'Cu 電鍍異常（void、晶粒偏小）', '下層 topography 繼承（跨層：下層 dishing／erosion 讓本層厚度隨 pattern 變化）', '上層熱預算或 cap 後退火造成 Cu 應力空洞（stress-induced voiding）'],
       up_checks: ['{L} post-CMP THK', '{L} trench CD（AEI）', 'CMP 機台／pad life、slurry lot', 'ECP 電鍍條件'],
       down_mean: '金屬線變寬或變厚',
       down_causes: ['Cu 厚度偏厚（CMP 欠拋）', '線寬 CD 偏大', 'Barrier 偏薄（須同時留意 EM／可靠度）'],
@@ -25,7 +25,7 @@ window.App.RULES_BASE = {
     { id: 'rc', label: 'Rc（Via／Contact 阻值）', kind: 'wat', metric: 'k', bad: 'up',
       name: 'rc_*;rc-*;rc#*;rv_*;rvia*;via*;rct*;kelvin*', unit: 'ohm;Ω;ohms',
       up_mean: 'Via 導通變差',
-      up_causes: ['Via CD 偏小（底部接觸面積變小）', 'Via 底部殘留（polymer、etch stop 未開完全）', 'Barrier／liner 偏厚', 'Via 與下層金屬對準偏移（overlay）', 'Via 內 Cu void'],
+      up_causes: ['Via CD 偏小（底部接觸面積變小）', 'Via 底部殘留（polymer、etch stop 未開完全）', 'Barrier／liner 偏厚', 'Via 與下層金屬對準偏移（overlay）', 'Via 內 Cu void', '下層寬線的 stress-induced voiding（via 下方空洞，退火／熱循環後出現，跨層）', '下層 dishing 讓 via 落點變低、via 變長（跨層）'],
       up_checks: ['{L} via CD（ADI／AEI）', 'Via etch chamber、wet clean 條件', 'Barrier PVD 厚度', '{L} overlay'],
       down_mean: 'Via 導通變好',
       down_causes: ['Via CD 偏大', 'Barrier 偏薄'],
@@ -34,7 +34,7 @@ window.App.RULES_BASE = {
     { id: 'lk', label: 'LK（線間漏電）', kind: 'wat', metric: 'fold', bad: 'up',
       name: 'lk_*;lk-*;lk#*;leak*;ileak*;il_*', unit: 'a;na;pa;ua;µa;*amp*',
       up_mean: '線間絕緣變差',
-      up_causes: ['金屬線 CD 偏大、間距（space）變小', 'CMP 後 Cu 殘留或清洗不足', 'Low-k 損傷（plasma damage、吸濕）', 'Barrier 擴散'],
+      up_causes: ['金屬線 CD 偏大、間距（space）變小', 'CMP 後 Cu 殘留或清洗不足', 'Low-k 損傷（plasma damage、吸濕）', 'Barrier 擴散', '下層 topography 造成本層 CMP 殘留（跨層）', '上層 etch／ash／cap 製程損傷本層 low-k 或 cap 介面'],
       up_checks: ['{L} trench CD（AEI）→ 換算 space', 'Post-CMP 缺陷掃描（Cu residue）', 'CMP clean recipe', 'Low-k 厚度與 k 值'],
       down_mean: '線間漏電改善',
       down_causes: ['線寬偏小、space 變大（須確認 Rs 是否同步上升）'],
@@ -42,7 +42,7 @@ window.App.RULES_BASE = {
       pairs: 'cd:+', source: 'REFERENCES #8 #9' },
     { id: 'spa', label: 'SPA（線間漏電，電壓輸出）', kind: 'wat', metric: 'rate', bad: 'up',
       name: 'spa*', unit: 'v;*volt*',
-      up_mean: '漏電異常比例上升（讀值低於固定值）',
+      up_mean: '漏電異常比例上升',
       up_causes: ['金屬線 CD 偏大、space 變小', 'CMP 後 Cu 殘留、橋接（bridge）', 'Low-k 損傷（plasma damage、吸濕）', 'Barrier 擴散'],
       up_checks: ['{L} trench CD（AEI）→ 換算 space', 'Post-CMP 缺陷掃描（Cu residue、bridge）', '異常 wafer 的 die 位置是否集中（edge／特定 shot）', 'CMP clean recipe、low-k 製程'],
       down_mean: '漏電異常比例下降',
@@ -84,6 +84,11 @@ window.App.RULES_BASE = {
       up_mean: '線寬偏大（space 變小）', up_causes: ['Trench litho dose／focus 偏移', 'Trench etch bias 變大', 'Hardmask 開口偏大'], up_checks: ['{L} ADI CD（分辨是 litho 還是 etch）', 'Trench etch chamber、bias', 'Scanner dose／focus log'],
       down_mean: '線寬偏小（space 變大）', down_causes: ['Trench etch 不足或 over-trim', 'Litho dose 偏高'], down_checks: ['{L} ADI CD', 'Trench etch chamber', 'Scanner dose log'],
       pairs: '', source: '' },
+    { id: 'topo', label: 'Topography（inline）', kind: 'inline', metric: 'k', bad: 'up',
+      name: '*dish*;*eros*;*step_h*;*stepheight*;*step height*;*topo*;*recess*', unit: 'a;å;*ang*;nm',
+      up_mean: 'Dishing／erosion 變大', up_causes: ['CMP 過拋（overpolish 時間、pad／slurry 變化）', '大塊 metal 或高密度 pattern 的選擇比變差', 'Dummy fill 不足'], up_checks: ['{L} CMP 機台、overpolish time、pad life', '{L} 大塊 metal 結構的 THK', '上層 Rs／Rc 是否跟著偏移（跨層）'],
+      down_mean: 'Dishing／erosion 變小', down_causes: ['CMP 研磨不足', 'Slurry 選擇比改變'], down_checks: ['{L} CMP 終點偵測、polish time', '{L} 殘留（Cu puddle）檢查'],
+      pairs: '', source: 'REFERENCES #11–#13' },
     { id: 'thk', label: 'THK（inline）', kind: 'inline', metric: 'k', bad: '',
       name: '*thk*;*thick*;*height*;*depth*;t;*_t;t_*;*_t_*', unit: 'a;å;*ang*;nm',
       up_mean: 'Cu 厚度偏厚', up_causes: ['CMP 研磨不足（polish time、pad 剛更換）', 'ECP 電鍍偏厚', 'Trench 深度偏深'], up_checks: ['{L} CMP 機台、pad life、終點偵測', 'ECP 厚度', 'Trench depth（etch）'],
@@ -110,3 +115,24 @@ window.App.RULES_BASE = {
       pairs: '', source: '' },
   ],
 };
+
+/**
+ * 跨層關係（v2.6）：WAT 偏移不一定來自當層 inline；下層 CMP dishing／erosion 與 pattern density 造成的 topography 會往上繼承。
+ * 來源：Boning ICMTS 2003 tutorial（M1 topography 帶進 M2）、Chang–Cao–Spanos TED 2004（dishing → R 上升、C 不變）、Tugbawa–Boning chip-scale CMP model。見 docs/REFERENCES.md #11–#13。
+ * 欄位：wat = WAT 類別；rel = 'below'（Mn 看 M(n−1)、Vn 看 Mn）或 'above'（Vn 看 M(n+1)）；inl = inline 類別；sign = inline 偏移方向 × WAT 偏移方向的預期（0 = 方向視 pattern 而定，只看有無偏移）；why／check = 文字。
+ */
+window.App.XLAYER = [
+  { wat: 'rs', rel: 'below', inl: 'thk', sign: 0, why: '下層 CMP dishing／erosion 的 topography 繼承到本層，本層 THK 隨所在 pattern 不同而異', check: '{B} THK／dishing；WAT 結構與 inline monitor 是否同 pattern' },
+  { wat: 'rs', rel: 'below', inl: 'topo', sign: 0, why: '下層 dishing／erosion／step height 直接決定本層 ILD 起伏與 CMP 殘留厚度', check: '{B} dishing／erosion ↔ 本層 THK；大塊 metal 結構優先' },
+  { wat: 'rc', rel: 'below', inl: 'thk', sign: -1, why: '下層金屬 dishing（偏薄）→ via 落點變低、via 變長，Rc 上升', check: '{B} THK／dishing；via 是否落在 dishing 區；via etch 深度' },
+  { wat: 'rc', rel: 'above', inl: 'thk', sign: -1, why: 'Dual damascene：上層 trench 偏深則 via 剩餘高度變短，Rc 下降；trench 偏淺則相反', check: '{A} trench depth／THK；via-first／trench-first 的 etch 分配' },
+  { wat: 'lk', rel: 'below', inl: 'thk', sign: -1, why: '下層 topography（dishing／erosion）讓本層 CMP 在凹陷處留下 Cu 殘留，線間漏電上升', check: '{B} dishing／erosion；本層 post-CMP 缺陷 vs {B} 大塊 metal 位置' },
+  { wat: 'spa', rel: 'below', inl: 'thk', sign: -1, why: '同 LK：下層凹陷處 CMP 殘留造成短路路徑', check: '{B} dishing／erosion；本層 post-CMP 缺陷' },
+  { wat: 'cap', rel: 'below', inl: 'thk', sign: 0, why: '下層 topography 改變本層 ILD 有效厚度（線到下層金屬的距離），Cap 隨之變動', check: '{B} THK／topography；ILD 厚度 monitor' },
+  // ---- 第 3 批文獻（REFERENCES #21–#29）加入
+  { wat: 'rc', rel: 'below', inl: 'topo', sign: 1, why: '下層 dishing 變大 → via 落點變低、via 變長、底部 barrier 覆蓋變差，Rc 上升', check: '{B} dishing／erosion；via 落在寬線或大塊 metal 的結構優先看' },
+  { wat: 'rc', rel: 'below', inl: 'cd', sign: 0, why: '下層線寬改變影響 via 落點：偏小 → via 未完全落在線上（unlanded）；偏大（寬線）→ stress-induced voiding 風險', check: '{B} CD 與 via overlay；寬線下 via 的 Rc 結構是否特別差' },
+  { wat: 'vbd', rel: 'below', inl: 'topo', sign: -1, why: '下層 topography 讓本層 CMP 殘留 Cu／cap 介面不平，崩潰發生在 cap／dielectric 介面，VBD 下降', check: '{B} dishing／erosion；本層 post-CMP 缺陷' },
+  { wat: 'cap', rel: 'above', inl: 'thk', sign: 0, why: '上層 ILD／cap 厚度改變本層線到上層金屬的距離', check: '{A} ILD／THK monitor' },
+];
+

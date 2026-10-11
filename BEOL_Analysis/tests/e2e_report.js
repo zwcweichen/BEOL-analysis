@@ -171,28 +171,44 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   // ---- commonality: factor scan on Rc_V12 @ TMTQ11 (tool labels were assigned so CH_B carries the shift)
   const fi = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('Rc_V12')));
   await page.click(`.hl-row[data-hl="${fi}"]`); await page.waitForTimeout(600);
-  const fac = await page.evaluate(() => [...document.querySelectorAll('.fact tr[data-fac]')].map((t) => ({ col: t.dataset.fac, hit: t.classList.contains('hit'), cf: t.classList.contains('cf'), txt: t.innerText.replace(/\s+/g, ' ') })));
-  console.log('factors:', fac.map((x) => x.txt).join(' | '));
-  ok(fac[0]?.col === 'V12_ETCH_CH' && fac[0].hit && /CH_B/.test(fac[0].txt), 'factor scan ranks V12_ETCH_CH = CH_B first (significant)');
-  ok(fac.filter((x) => x.hit).length === 1, 'random tool columns are not flagged');
-  // guided checks: each suggested check gets a status + one-click action
+  const xc = await page.evaluate(() => [...document.querySelectorAll('.xcs .xc')].map((d) => ({ label: d.querySelector('.xl').innerText, state: d.className.replace('xc ', ''), txt: d.querySelector('.xt').innerText })));
+  console.log('cross-checks:', xc.map((x) => `${x.label}:${x.state}:${x.txt}`).join(' | '));
+  const tool = xc.find((x) => x.label === '機台');
+  ok(tool && tool.state === 'ok' && /V12_ETCH_CH：CH_B/.test(tool.txt) && /CIP \d+% 走 CH_B/.test(tool.txt) && !/p ?=/.test(tool.txt), `tool card: one-line verdict, no p-values (${tool?.txt})`);
+  ok(xc.find((x) => x.label === 'Inline')?.state === 'ok' && /V12 CD AEI/.test(xc.find((x) => x.label === 'Inline').txt) && /r = -0\.\d+/.test(xc.find((x) => x.label === 'Inline').txt), 'Inline card: WAT ↔ inline line up, r shown');
+  ok(xc.find((x) => x.label === 'Yield')?.state === 'ok' && /Bin7_open/.test(xc.find((x) => x.label === 'Yield').txt), 'Yield card lists abnormal yield items only');
+  // evidence-ranked causes (v2.7): supported first (✔ with the evidence), contradicted last and greyed (✘)
+  const cz = await page.evaluate(() => [...document.querySelectorAll('.czs li')].map((t) => ({ st: t.className.replace('cz ', ''), t: t.innerText.replace(/\s+/g, ' ') })));
+  ok(cz[0].st === 'yes' && /Via CD 偏小/.test(cz[0].t) && /V12 CD AEI −2\.79σ/.test(cz[0].t), `causes: supported cause first with its evidence (${cz[0].t})`);
+  ok(cz.filter((x) => x.st === 'no').length >= 1 && cz.every((x, i) => i === 0 || ({ yes: 0, na: 1, no: 2 })[x.st] >= ({ yes: 0, na: 1, no: 2 })[cz[i - 1].st]), 'causes: order yes → no-data → contradicted (greyed)');
+  // guided checks: compact list, each with a status; no p-value / stats text
   const cks = await page.evaluate(() => [...document.querySelectorAll('.cks li')].map((t) => ({ k: t.className.replace('ck ', ''), a: t.querySelector('a')?.innerText || '', t: t.innerText.replace(/\s+/g, ' ') })));
   console.log('checks:', cks.map((x) => `${x.k}:${x.a}`).join(' | '));
-  ok(cks.some((x) => x.k === 'ok' && /V12 CD AEI/.test(x.a)) && cks.some((x) => x.k === 'ok' && x.a === '機台分析') && cks.some((x) => x.k === 'ext'), 'checks are classified: ✔ inline corr, ✔ tool analysis, ◇ outside the tool');
-  // tool analysis window: run rate + box plot, composite grouping
-  await page.click('.fact tr.hit'); await page.waitForSelector('.fwin #twBox.js-plotly-plot'); await page.waitForTimeout(500);
-  const tw = await page.evaluate(() => ({ rows: [...document.querySelectorAll('.fwin .tw-tab tr')].map((t) => t.innerText.replace(/\s+/g, ' ')), rate: !!document.querySelector('.fwin #twRate.js-plotly-plot') }));
-  ok(tw.rate && tw.rows.length === 3 && /CH_B/.test(tw.rows[1] + tw.rows[2]), `tool window: run-rate chart + table (${tw.rows[1]})`);
-  await page.click('.fwin [data-tc="M12_CMP_Tool"]'); await page.waitForTimeout(600);
-  const tw2 = await page.evaluate(() => [...document.querySelectorAll('.fwin .tw-tab tr')].map((t) => t.innerText.replace(/\s+/g, ' ')));
-  ok(tw2.length === 5 && /CH_B × CMP02/.test(tw2.join()), 'composite grouping V12_ETCH_CH × M12_CMP_Tool → 4 levels');
+  ok(cks.some((x) => x.k === 'ok' && /V12 via CD/i.test(x.a)) && cks.some((x) => x.k === 'ok' && /chamber/i.test(x.a)) && cks.some((x) => x.k === 'ext'), 'checks are classified: ✔ inline corr, ✔ tool/chamber check (opens tool window), ◇ outside the tool');
+  ok(cks.length <= 6 && cks.every((x) => x.t.length < 60), `checks list is compact (${cks.length} items, longest ${Math.max(...cks.map((x) => x.t.length))} chars)`);
+  // tool analysis window: verdict line + run-rate bars (no table) + weekly chart + box plot with K annotations
+  await page.evaluate(() => document.querySelector('.xcs .xc[data-xc]:nth-child(2)') && [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台').click());
+  await page.waitForSelector('.fwin #twBox.js-plotly-plot'); await page.waitForTimeout(700);
+  const tw = await page.evaluate(() => { const w = document.querySelector('.fwin'); const bx = w.querySelector('#twBox'), wk = w.querySelector('#twWeek'); return {
+    verdict: w.querySelector('.tw-v')?.innerText || '', table: !!w.querySelector('table'), rate: !!w.querySelector('#twRate.js-plotly-plot'),
+    week: !!wk?._fullLayout, weekTraces: wk?.data?.length || 0, weekShapes: (wk?._fullLayout?.shapes || []).length, span: w.querySelector('#twSpan')?.innerText || '',
+    ann: (bx._fullLayout.annotations || []).map((a) => a.text), ticks: bx._fullLayout.xaxis.ticktext || [], order: bx._fullLayout.xaxis.categoryarray || [] }; });
+  console.log('tool window:', JSON.stringify({ v: tw.verdict, ann: tw.ann, span: tw.span.slice(0, 80) }));
+  ok(/CH_B/.test(tw.verdict) && !tw.table, `tool window: verdict line, no table (${tw.verdict.slice(0, 50)})`);
+  ok(tw.rate && tw.week && tw.weekTraces >= 2 && tw.weekShapes >= 1, 'run-rate % bars + weekly run chart with CIP-period shading');
+  ok(tw.ann.some((t) => /[+−-]\d\.\d+σ/.test(t)) && tw.ann.length >= 2, `K-shift per tool annotated on the box plot (${tw.ann.join(', ')})`);
+  ok(tw.ticks.length && /n \d+ ?\/ ?\d+|\d+ \/ \d+/.test(String(tw.ticks[0])) , `tick labels carry n BSL / CIP (${tw.ticks[0]})`);
+  ok(tw.order[0] === 'CH_B' && /\+3\.5\dσ/.test(tw.ann[0] || ''), `worst level (CH_B) is ordered first (${tw.order.join(' > ')})`);
+  await page.evaluate(() => document.querySelector('.fwin [data-tc="M12_CMP_Tool"]').click()); await page.waitForTimeout(700);
+  const tw2 = await page.evaluate(() => document.querySelector('.fwin #twBox')._fullLayout.xaxis.categoryarray || []);
+  ok(tw2.length === 4 && tw2.some((n) => /CH_B × CMP02/.test(n)), `composite grouping V12_ETCH_CH × M12_CMP_Tool → 4 levels (${tw2.join(', ')})`);
   await page.screenshot({ path: `${SHOT}/r7_factor.png` }); await page.keyboard.press('Escape');
   const fj = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('Con_M13')));
   await page.click(`.hl-row[data-hl="${fj}"]`); await page.waitForTimeout(500);
-  const cf = await page.evaluate(() => [...document.querySelectorAll('.fact tr.cf')].map((t) => t.dataset.fac));
-  ok(cf.includes('M12_CMP_Tool'), 'confounded tool column flagged (TMWF54 FAB15 all on CMP03)');
+  const cf = await page.evaluate(() => document.querySelector('.xcs .xc .xl') && [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台')?.querySelector('.xt').innerText || '');
+  ok(/混淆/.test(cf) && /M12_CMP_Tool/.test(cf), `confounded tool column flagged in the card (${cf})`);
   const sm = await page.evaluate(() => App.rptUI.summary());
-  ok(/疑似因子 V12_ETCH_CH = CH_B/.test(sm), 'summary text carries the factor verdict');
+  ok(/V12_ETCH_CH：CH_B/.test(sm), 'summary text carries the factor verdict');
 
   // ---- data layer: link tool history by wafer id (wide, then long with rework rows); LK_M12 → M12_ECP Tool = ECP02
   for (const [fn, piv] of [['TOOL_history_wide.xlsx', false], ['TOOL_history_long.xlsx', true]]) {
@@ -202,8 +218,8 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
     ok(L.cols.includes('M12_ECP Tool') && /資料層/.test(L.chip || ''), `columns added (${L.cols.length}) and data-layer chip shown`);
     const li = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('LK_M12')));
     await page.click(`.hl-row[data-hl="${li}"]`); await page.waitForTimeout(600);
-    const lf = await page.evaluate(() => [...document.querySelectorAll('.fact tr[data-fac]')].map((t) => ({ col: t.dataset.fac, hit: t.classList.contains('hit'), txt: t.innerText.replace(/\s+/g, ' ') })));
-    ok(lf[0]?.col === 'M12_ECP Tool' && lf[0].hit && /ECP02/.test(lf[0].txt) && !/ECP09/.test(lf[0].txt), `linked column found by the factor scan: ${lf[0]?.txt}`);
+    const lf = await page.evaluate(() => [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台')?.querySelector('.xt').innerText || '');
+    ok(/M12_ECP Tool：ECP02/.test(lf) && !/ECP09/.test(lf), `linked column found by the factor scan: ${lf}`);
     const k0 = await page.evaluate(() => App.rpt.res.cells[App.rpt.res.items.find((i) => i.name.startsWith('Rc_V12')).name].TMTQ11.FAB15.k);
     ok(near(k0, R.rc_TMTQ11), 'K values unchanged after linking (no row duplication)');
     await page.evaluate((f) => App.rptUI.unlink(f), fn); await page.waitForTimeout(800);

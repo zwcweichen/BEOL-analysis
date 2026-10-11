@@ -38,3 +38,18 @@ for w in range(80):
 pd.DataFrame(rows).to_excel(OUT+'D_long_chamber.xlsx',index=False)
 # ---- E: one condition only
 pd.DataFrame({'Wafer':[f'W{i}' for i in range(30)],'Split':['POR']*30,'Con_M1':rng.normal(1,.01,30),'M1_CD':rng.normal(40,.5,30)}).to_excel(OUT+'E_single_cond.xlsx',index=False)
+# ---- G (v2.6, 跨層 story): Rs_M3 偏高但 M3 CD／THK 正常；M2 THK 偏薄、M2 dishing 變大（下層 topography 繼承）。沒有任何機台欄位。
+rows=[]
+for prod in ['PA','PB']:
+    for cond,n in [('BSL',150),('CIP',40)]:
+        for i in range(n):
+            hit=(prod=='PA' and cond=='CIP')
+            m2dish=320+rng.normal(0,25)+(70 if hit else 0)          # Å, dishing of the wide-metal monitor
+            m2thk=2400+rng.normal(0,30)-(60 if hit else 0)
+            m3cd=60+rng.normal(0,.7); m3thk=2600+rng.normal(0,30)
+            rs3=0.075*(60/m3cd)*(2600/m3thk)*(1+rng.normal(0,.012))*(1+0.05*(m2dish-320)/70 if hit else 1)
+            rc2=2.2+rng.normal(0,.07)+(0.12*(m2dish-320)/70 if hit else 0)
+            rows.append({'WAFER':f'{prod}{cond}{i:03d}.{1+i%25:02d}','Product':prod,'Lot_Type':cond,'Date':pd.Timestamp('2026-07-01')+pd.Timedelta(days=i%60),
+                'Rs_M3':round(rs3,5),'Rc_V2':round(rc2,4),'LK_M3':np.exp(rng.normal(np.log(3e-11),.4)),
+                'M3 CD':round(m3cd,2),'M3 THK':round(m3thk,1),'M2 THK':round(m2thk,1),'M2 DISH':round(m2dish,1)})
+pd.DataFrame(rows).to_excel(OUT+'G_xlayer.xlsx',index=False)

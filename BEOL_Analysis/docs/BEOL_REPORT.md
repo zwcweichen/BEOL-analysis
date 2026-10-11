@@ -132,6 +132,51 @@ BEOL 後段製程（Cu interconnect）固定流程的 BSL vs CIP 比較工具。
 
 **疑似因子判定修正**：除了 p 與效果量，新增 **ΔK（level 間最大差）**；要同時滿足 ΔK ≥ 0.5σ 且 ΔK ≥ 整體偏移的 20% 才標「先查這個因子」。否則註明「各 level 差 xσ，相對整體偏移不大 → 比較像條件本身的差異」。這是為了避免整個 CIP 都偏了 −9σ、兩台機台只差 0.6σ 時被誤判成 bad tool。
 
+## 0.8 v2.6 精簡交叉比對、機台分析改版、跨層知識、角色自審
+
+**使用者回饋（2026-10-11）與對應改動**
+
+| 回饋 | 改動 |
+|---|---|
+| 疑似因子的 p-value、ε² 等太學術；資料有限、另有系統做系統性 tool correlation；列太多眼花 | 疑似因子表拿掉。改成 HL 上方的**交叉比對卡**（Inline／跨層／機台／Yield 各一張，一行文字＋✔△✘○ 四種狀態）。機台卡只寫結論：`V12_ETCH_CH：CH_B +3.55σ（CIP 50% 走 CH_B，n 40）`、`2/2 台皆偏（非 tool-specific）`、`與條件完全混淆`。統計仍在引擎裡算，只是不顯示。 |
+| 建議檢查文字太多 | 只列檢查項目本身（精簡、每條一行），fallback 改成灰字備註；WAT ↔ inline 對上時以專業短句呈現（`Inline ✔ V12 CD AEI −2.79σ，r = -0.84`）。 |
+| 機台視窗 a. 表格拿掉 | 只留 run 貨比例長條（含 %）＋一行結論（`.tw-v`）。 |
+| b. K-shift 放到 box plot | 每個 level 的 K 以標註框放在 CIP box 上緣（上 whisker 之上），顏色依燈號；最差 level 排最左；x 軸標籤附 `n BSL／CIP`，n < 30 灰字。 |
+| c. 分時間看 run 貨 | 新增**每週 run 貨**堆疊長條（各 level 片數），CIP 期間淡底；下方列出每個 level 的出現期間，超過 3 週沒再出現標「（已停）」、後期才出現標「（後期加入）」；可切「只看本組／全部 wafer」。 |
+
+**跨層知識（物理知識庫擴充）**
+
+使用者指出：WAT 偏移不只來自當層 inline（CD、VCD、THK…），CMP dishing／erosion 與 pattern density 造成的 topography 會往上層繼承（Boning ICMTS 2003；Chang–Cao–Spanos TED 2004；Tugbawa–Boning chip-scale CMP model，見 REFERENCES #11–#13），而且 WAT 結構與 inline monitor 的位置／pattern 不同時兩者可以對不上。v2.6 的做法：
+
+- `rules_base.js` 新增 `App.XLAYER` 表（資料，不是程式）：WAT 類別 × 鄰層（below／above）× inline 類別 × 預期方向（0 = 視 pattern 而定）× 機制文字 × 檢查文字。目前 7 條：Rs←M(n−1) THK／topography、Rc←Mn THK（via 落點）與 M(n+1) THK（trench 深度）、LK／SPA←M(n−1) topography（CMP 殘留）、Cap←M(n−1) topography。
+- 新增 inline 類別 `topo`（`*dish*`、`*eros*`、`*step_h*`、`*topo*`、`*recess*`）。
+- `rules.js`：`R.adjLayer`、`R.relatedXLayer`；`R.diagnose(cell, rel, xrel)`：同層 inline 解釋不了而鄰層有偏移時，結論改寫成「同層 … 未偏移；跨層 M2 THK −2.19σ、M2 DISH +2.81σ 有偏移 → 下層 CMP dishing／erosion 的 topography 繼承到本層…」，原因第一條與檢查第一條換成跨層項目。
+- HL 的「跨層」卡只在資料中有鄰層 inline 時出現；配對圖也改畫跨層項目（標「跨層，方向視 pattern 而定」）。
+- 自動設定：比較欄改成先看**值**（BSL／CIP／POR／ref…），再看欄名；避免 `Product` 被誤認成比較欄（角色 B 模擬時抓到的問題）。
+
+**開發模式（使用者提議）**：每版完成後分三個角色自審——A 開發（製程整合主管＋系統設計：設計簡潔、避免複雜 UI、顧及製程分析需求）、B 使用者模擬（工程師：產 1～2 份模擬資料，可取材文獻 issue，驗證泛用性）、C 使用者體驗回饋（與 B 同視角放入資料後檢查卡住、欄位抓不到、可更方便，再加管理者視角判斷結論能否直接用）。紀錄在 `docs/REVIEW_LOG.xlsx`。B 每版產生 1～2 份模擬資料（可取材論文的 issue），例如本版的 `variants/G_xlayer.xlsx`（Rs_M3 偏高、當層 inline 正常、M2 THK 偏薄與 M2 dishing 變大、無任何機台欄）。本版自審發現並修掉：比較欄誤判、配對圖畫錯項目、跨層卡 r 與圖不一致、toast 顯示毫秒、建議檢查太長。
+
+## 0.9 v2.7 可能原因依證據排序、跨層規則第 2 輪
+
+**可能原因依證據排序**（使用者認同的概念）：知識庫的原因清單原本照寫入順序列。v2.7 為每條原因自動配一個「證據類型」（用原因文字的關鍵字對應，fab 層規則只要用同樣字眼即可）：
+
+| 證據類型 | 關鍵字 | 證據來源 |
+|---|---|---|
+| cd／vcd | CD、線寬、space、litho、dose、etch bias、hardmask、via CD、底部接觸 | 同層 inline CD／via CD 的 K 與方向 |
+| thk | 厚度、THK、CMP、過拋、dishing、erosion、trench 深度 | 同層 inline THK |
+| xlayer | topography、繼承、跨層、下層 dishing | 鄰層 inline（`App.XLAYER`） |
+| xcd | 下層寬線、stress-induced、unlanded | 鄰層 inline CD |
+| tool | 機台、chamber、pad、slurry、電鍍、ECP、PVD、recipe、matching | 疑似因子掃描 |
+| ext | 其他（barrier、void、low-k 損傷、overlay、熱預算…） | 工具外 |
+
+每條原因得到三種狀態：✔ 資料支持（排最前、粗體、附證據如 `V12 CD AEI −2.79σ`）、· 無資料可比對（中間）、✘ 資料不支持（排最後、灰字，附 `M3 CD 未偏移`）。同一層內維持知識庫順序。HL 面板、HTML 匯出、PPT、複製結論都用同一個排序（`rankCauses`）。Inline item 只用機台證據（同層 WAT 的反應無法分辨 litho 與 etch）。
+
+**跨層規則第 2 輪**（文獻第 3 批 #21–#29）：`App.XLAYER` 加 `rc←below topo`（dishing → via 變長）、`rc←below cd`（unlanded／寬線 SIV，方向視情況）、`vbd←below topo`、`cap←above thk`；可能原因加「下層寬線的 stress-induced voiding」「上層熱預算或 cap 後退火造成 Cu 應力空洞」「上層 etch／ash／cap 製程損傷本層 low-k 或 cap 介面」「下層 topography 造成本層 CMP 殘留」。
+
+注意：知識庫 Excel 的清單欄用「；」或換行分隔，原因文字裡不能再用「；」（本版自審時被 round-trip 測試抓到）。
+
+---
+
 ## 1. 流程
 1. **匯入**：拖入 Excel 或 CSV。水平（by wafer）、垂直（by site／Item-Value 長表）兩種格式都可以；長表會自動轉成每片一列。
 2. **自動設定**：系統自動判斷以下欄位，判斷正確時直接產生戰報，不必經過設定頁：
