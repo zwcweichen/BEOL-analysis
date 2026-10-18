@@ -248,10 +248,11 @@
     if (rel.r != null && Math.abs(rel.r) < 0.3) return 'weak';
     return 'strong';
   };
-  R.fmtK = (k) => `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`;
+  R.fmtK = (k) => (Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`);
   R.fmtR = (r) => (r == null ? '' : `r = ${r >= 0 ? '' : '−'}${Math.abs(r).toFixed(2)}`);
   /** "V12 CD AEI −2.79σ（r = −0.84）" */
-  R.relTxt = (rel, withR = true) => `${R.parseName(rel.item.name).short} ${R.fmtK(rel.k)}${withR && rel.r != null ? `（${R.fmtR(rel.r)}）` : ''}`;
+  // v3.0: r is used for the judgement but not shown（戰報只呈現偏移量與有無對上）；pass withR = true only in the check window
+  R.relTxt = (rel, withR = false) => `${R.parseName(rel.item.name).short} ${R.fmtK(rel.k)}${withR && rel.r != null ? `（${R.fmtR(rel.r)}）` : ''}`;
 
   R.diagnose = (cell, related, xrel) => {
     const cat = R.byId(cell.item.cat);

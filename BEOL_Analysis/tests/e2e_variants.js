@@ -25,6 +25,7 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
   const run = async (file, check) => {
     const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 }, acceptDownloads: true });
     const page = await ctx.newPage();
+    await page.addInitScript(() => { try { localStorage.setItem('pdat:rpt-kb-on', 'true'); } catch (e) {} });
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(HTML);
     await page.setInputFiles('#file', file);
@@ -49,8 +50,8 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(st.cond === 'Split' && st.base === 'POR' && st.cips.join() === 'Thin_TaN', 'user format 1: condition Split, BSL POR');
     const k = await page.evaluate(() => __cell('Rc_TV2', '全部', 'Thin_TaN').k);
     ok(near(k, REF.rc_tv2), `Rc_TV2 K ${k.toFixed(2)} = pandas ${REF.rc_tv2.toFixed(2)}`);
-    const fx = await page.evaluate(() => { const d = [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台'); return d ? { state: d.className.replace('xc ', ''), txt: d.querySelector('.xt').innerText } : null; });
-    ok(fx && fx.state !== 'ok' && /皆偏|非 tool-specific/.test(fx.txt), `whole-CIP shift (−9.5σ on both tools) is NOT blamed on a tool (${fx?.txt})`);
+    const fx = await page.evaluate(() => { const d = App.rptUI.crossChecks(App.rpt.res.findings.wat[App.rpt.hl.wat]).find((x) => x.label === '機台'); return d ? { state: d.state, txt: d.text } : null; });
+    ok(fx && fx.state !== 'ok' && /非本層.*TV2 機台資料未提供/.test(fx.txt), `whole-CIP shift is NOT blamed on a tool; only off-layer tool columns exist → asks for TV2 tool data (${fx?.txt})`);
     await page.selectOption('#rGroup', 'TM1_CMP_Tool'); await page.waitForTimeout(600);
     ok(await page.evaluate(() => App.rpt.res.groups.length >= 2), 'user can regroup by any column (TM1_CMP_Tool)');
   });
@@ -103,7 +104,7 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
   await run(path.join(SD, 'variants', 'G_xlayer.xlsx'), async (page, st) => {
     ok(st.cond === 'Lot_Type' && st.base === 'BSL' && st.cips.join() === 'CIP' && st.group === 'Product', 'condition detected from VALUES (BSL/CIP) even though Product has fewer levels');
     ok(st.items['M2 DISH'] === 'topo/inline/k', 'dishing monitor classified as topography (inline)');
-    const v = await page.evaluate(() => { const f = App.rpt.res.findings.wat.find((x) => x.cell.item.name === 'Rs_M3'); const cards = [...document.querySelectorAll('.xcs .xc')].map((d) => d.className.replace('xc ', '') + ':' + d.innerText.replace(/\s+/g, ' '));
+    const v = await page.evaluate(() => { const f = App.rpt.res.findings.wat.find((x) => x.cell.item.name === 'Rs_M3'); const cards = App.rptUI.crossChecks(f).map((d) => d.state + ':' + d.label + ' ' + d.icon + ' ' + d.text);
       return { v: f.dx.verdict, c0: f.dx.causes[0], k0: f.dx.checks[0], cards, fig: document.querySelector('#hlDet .hd-figs .fig:nth-child(2) .ft')?.innerText || '' }; });
     ok(/同層 .*未偏移；鄰層 M2 (THK|DISH)/.test(v.v) && /有關聯/.test(v.v) && !/topography/.test(v.v), `Rs_M3 verdict: same layer flat → adjacent M2 with r (${v.v.slice(0, 70)}…)`);
     ok(/M2 THK／dishing/.test(v.k0), 'cross-layer check listed first');
@@ -114,7 +115,7 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(st.cond === 'FAB_Name' && st.base === 'FAB18_U%_BSL' && st.group === 'Product', 'user-like file: condition FAB_Name (values FAB18_U%_BSL / FAB15_U%_BSL)');
     ok(st.items['Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK)'] === 'thk/inline/k' && st.items['Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK_R)'] === 'other_inline/inline/k' && st.items['Mean(Con_M15)'] === 'rs/wat/k', 'long "Mean(Item Value by Site, …)" names: THK → thk, THK_R (range) → 其他（inline）, Mean(Con_M15) → rs');
     const v = await page.evaluate(() => { const f = App.rpt.res.findings.wat.find((x) => /Con_M15/.test(x.cell.item.name)); return { short: App.rules.parseName('Mean(Item Value by Site, 07504.050 M15CUCMP_5, NOVA_THK)').short, v: f.dx.verdict,
-      cards: [...document.querySelectorAll('.xcs .xc')].map((d) => d.className.replace('xc ', '') + ':' + d.innerText.replace(/\s+/g, ' ')), cks: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')) }; });
+      cards: App.rptUI.crossChecks(f).map((d) => d.state + ':' + d.label + ' ' + d.icon + ' ' + d.text), cks: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')) }; });
     ok(v.short === 'M15CUCMP_5 NOVA_THK', `long name shortened for display (${v.short})`);
     ok(/同層 .*未偏移/.test(v.v) && /鄰層 .*關聯弱/.test(v.v) && !/topography|pattern/.test(v.v), `adjacent-layer shift with r = 0.1 is reported as weak evidence, not as a mechanism claim (${v.v.slice(0, 80)}…)`);
     ok(v.cards.some((t) => /^warn:鄰層/.test(t) && /關聯弱/.test(t)) && v.cards.some((t) => /^warn:機台/.test(t) && /皆偏/.test(t)), `cards: 鄰層 △ 關聯弱, 機台 △ 6/6 皆偏 → ${v.cards.join(' | ')}`);
@@ -125,10 +126,44 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(await page.evaluate(() => /沒有對應/.test(document.querySelector('.fwin .tw-v').innerText)), 'check window says the column is missing and offers import');
     await page.evaluate(() => { App.rpt.reopenCheck = null; document.querySelector('.fwin [data-ck=imp]').click(); });
     await page.setInputFiles('#file2', path.join(SD, 'variants', 'H_link_M15CD.xlsx')); await page.waitForTimeout(3000);
-    const after = await page.evaluate(() => ({ v: document.querySelector('.fwin .tw-v')?.innerText || '', rate: App.rpt.links[0]?.rate, cks: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')), cards: [...document.querySelectorAll('.xcs .xc')].map((d) => d.className.replace('xc ', '') + ':' + d.innerText.replace(/\s+/g, ' ')) }));
+    const after = await page.evaluate(() => ({ v: document.querySelector('.fwin .tw-v')?.innerText || '', rate: App.rpt.links[0]?.rate, cks: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')), cards: App.rptUI.crossChecks(App.rpt.res.findings.wat[App.rpt.hl.wat]).map((d) => d.state + ':' + d.label + ' ' + d.icon + ' ' + d.text) }));
     ok(after.rate > 0.75 && /M15 CD AEI/.test(after.v) && /有關聯/.test(after.v), `linked M15 CD (UAB001-02 ↔ UAB001.02, ${Math.round(after.rate * 100)}% matched) → window reopens: ${after.v.slice(0, 60)}`);
     ok(after.cks.some((t) => /^ok:.*trench CD/.test(t) && /有關聯/.test(t)) && after.cards.some((t) => /^ok:Inline/.test(t) && /M15 CD AEI/.test(t)), 'check row and Inline card turn ✔ after the import');
     await page.keyboard.press('Escape');
+  });
+  // ---- v3.2 pre-processing: unit mismatch, duplicated wafers, extreme outliers; text dates in two formats; per-CIP tool confounding
+  await run(path.join(SD, 'variants', 'J_fabrun.xlsx'), async (page, st) => {
+    const p0 = await page.evaluate(() => ({ pend: App.rptUI.prepPending(), date: App.rpt.cfg.dateCol, range: App.rpt.res.dateRange?.map((d) => d.toISOString().slice(0, 10)), hl: App.rpt.res.findings.wat.map((f) => f.dx.title), banner: document.querySelector('.prep-warn')?.innerText || '' }));
+    console.log('fabrun:', JSON.stringify(p0));
+    ok(p0.date === 'WAT_DATE' && p0.range && p0.range[0] === '2026-04-01' && /2026-09-2\d/.test(p0.range[1]), 'text dates in two formats (2026/04/01 08:00, 01-08-2026 08:00) parsed into one date column');
+    ok(p0.pend.units === 2 && /疑似單位不同 2/.test(p0.banner) && p0.hl.some((t) => /Rs_M3.*>\+10σ/.test(t)), 'Rs ×1000 and yield fraction flagged as unit suspects; |K| ≥ 10 shown as >10σ');
+    ok(p0.pend.outl <= 3 && p0.pend.outl >= 1, `Rc campaign tail is NOT flagged as outliers (${p0.pend.outl} isolated points only)`);
+    await page.click('#tabs button[data-tab=prep]'); await page.waitForTimeout(600);
+    await page.evaluate(() => document.querySelector('[data-scale]').click()); await page.waitForTimeout(900);
+    await page.evaluate(() => document.querySelector('[data-scale]').click()); await page.waitForTimeout(900);
+    const p1 = await page.evaluate(() => { document.querySelector('#kbOn').click(); const r = App.rpt.res; return { pend: App.rptUI.prepPending(), rs: r.cells.Rs_M3.P1['CIP-B'].k, yl: r.cells.Yield.P1['CIP-B'].k, hl: r.findings.wat.map((f) => f.dx.title), sm: App.rptUI.summary() }; });
+    ok(p1.pend.units === 0 && Math.abs(p1.rs) < 3 && Math.abs(p1.yl) < 3 && !p1.hl.some((t) => /Rs_M3/.test(t)), `one-click scale: Rs K ${p1.rs.toFixed(2)}σ, Yield K ${p1.yl.toFixed(2)}σ, Rs no longer an HL`);
+    ok(/CIP 走的機台沒有 BSL 可對照/.test(p1.sm) && !/皆偏/.test(p1.sm), 'tool verdict: CIP-only chambers → 無法分辨, never 皆偏');
+    ok(/○ 鄰層 M3 THK（CIP-B 無資料）/.test(p1.sm) && !/✔ .*M3 THK/.test(p1.sm), 'grey partner cell → ○ 缺資料, not ✔');
+    ok(/建議檢查（全部 HL 共同）/.test(p1.sm) && /資料品質：CIP-C 在 P2 沒有 wafer/.test(p1.sm) && !/知識庫 base/.test(p1.sm), 'summary: common checks printed once, data quality merged, no KB version line when KB is off');
+    await page.evaluate(() => document.querySelector('#kbOn').click());
+    await page.evaluate(() => document.querySelector('[data-pexcl]').click()); await page.waitForTimeout(900);
+    const p2 = await page.evaluate(() => ({ pend: App.rptUI.prepPending() }));
+    await page.click('#tabs button[data-tab=report]'); await page.waitForTimeout(500);
+    ok(p2.pend.outl === 0 && p2.pend.total === 0 && !(await page.evaluate(() => document.querySelector('.prep-warn'))), 'outliers removed → nothing pending, banner gone');
+    await page.click('#tabs button[data-tab=prep]'); await page.waitForTimeout(500);
+    await page.evaluate(() => document.querySelector('[data-prestore]').click()); await page.waitForTimeout(900);
+    ok((await page.evaluate(() => App.rptUI.prepPending().outl)) >= 1, 'restore brings the points back');
+  });
+  await run(path.join(SD, 'variants', 'I_trap.xlsx'), async (page, st) => {
+    const p0 = await page.evaluate(() => ({ pend: App.rptUI.prepPending(), bn: App.rpt.res.cells['Rs_M1 (ohm/sq)'].G1['CIP-A'].bn, dups: App.rpt.prepScan.dups.map((d) => d.wafer + ':' + d.n) }));
+    ok(p0.pend.dups === 1 && p0.bn === 121, `duplicated wafer detected (${p0.dups.join(',')}), counted twice until the user decides`);
+    await page.click('#tabs button[data-tab=prep]'); await page.waitForTimeout(600);
+    await page.evaluate(() => document.querySelector('[data-dup=mean]').click()); await page.waitForTimeout(900);
+    const p1 = await page.evaluate(() => ({ pend: App.rptUI.prepPending(), bn: App.rpt.res.cells['Rs_M1 (ohm/sq)'].G1['CIP-A'].bn, nw: App.rpt.res.nWafer.POR }));
+    ok(p1.pend.dups === 0 && p1.bn === 120 && p1.nw === 240, 'dup → 取平均: BSL N 120, wafer count 240');
+    const foot = await page.evaluate(() => { document.querySelector('#tabs button[data-tab=report]').click(); return document.querySelector('.lt tr.sum')?.innerText || ''; });
+    ok(/橘 \d/.test(foot) && !/\d\+\d/.test(foot), `lights-table footer reads 橘 n 黃 n (${foot.replace(/\s+/g, ' ').slice(0, 60)})`);
   });
   await run(path.join(SD, 'variants', 'E_single_cond.xlsx'), async (page, st) => {
     ok(st.tab === 'tab-setup' && !st.hasRes, `single condition → no fake report, asks in setup (${st.msg.trim()})`);

@@ -8,7 +8,7 @@
   E.cat = (v) => (v == null ? '(空白)' : v instanceof Date ? App.fmtDate(v) : typeof v === 'number' ? App.fmtNum(v) : String(v));
   E.natCmp = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
-  const fmtK = (k) => (k == null || !isFinite(k) ? '—' : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`);
+  const fmtK = (k) => (k == null || !isFinite(k) ? '—' : Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`);
   const pct = (x) => (x == null ? '—' : `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`);
   E.fmtK = fmtK; E.pct = pct;
   const median = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -249,7 +249,19 @@
         if (isAbn(vl)) findings.inline.push({ type: 'var', which, cell, varLevel: vl, score: ((which === 'wiw' ? cell.wiwRatio : cell.sdRatio) - 1) * 3, dx: RU().diagnoseVar(cell, which) });
       }
     }
-    const lvOf = (f) => (f.type === 'var' ? f.varLevel : f.cell.level);
+    // v3.2: one HL per cell — a mean finding and a variation finding of the same item / group / CIP are merged
+    {
+      const byCell = new Map();
+      for (const f of findings.inline) { const k = `${f.cell.item.name}|${f.cell.group}|${f.cell.cip}`; if (!byCell.has(k)) byCell.set(k, []); byCell.get(k).push(f); }
+      findings.inline = [...byCell.values()].map((arr) => {
+        if (arr.length < 2) return arr[0];
+        const m = arr.find((f) => f.type === 'mean'), v = arr.find((f) => f.type === 'var');
+        const vt = `${v.which === 'wiw' ? '片內 σ' : 'wafer 間 σ'} ×${(v.which === 'wiw' ? v.cell.wiwRatio : v.cell.sdRatio).toFixed(2)}`;
+        return { ...m, varOf: v, varLevel: v.varLevel, which: v.which, score: m.score + v.score,
+          dx: { ...m.dx, title: `${m.dx.title}，${vt}`, verdict: `${m.dx.verdict}${v.dx.verdict ? ` ${v.dx.verdict}` : ''}`, checks: [...new Set([...(m.dx.checks || []), ...(v.dx.checks || [])])], causes: [...new Set([...(m.dx.causes || []), ...(v.dx.causes || [])])] } };
+      });
+    }
+    const lvOf = (f) => (f.type === 'var' ? f.varLevel : f.varOf ? (RANK[f.varLevel] > RANK[f.cell.level] ? f.varLevel : f.cell.level) : f.cell.level);
     for (const k of E.KINDS) findings[k].sort((a, b) => RANK[lvOf(b)] - RANK[lvOf(a)] || b.score - a.score);
     // ---------------- counts & data quality per module
     const cnt = {}, naList = {};
@@ -269,6 +281,80 @@
   };
 
 
+
+  // ------------------------------------------------------------------ v3.2 data pre-processing: duplicates, unit mismatch, extreme outliers
+  E.prepDefault = () => ({ dup: 'keep', scale: {}, excl: new Set(), ack: false });
+  /** duplicated wafer ids (by-wafer table) and unit-scale suspicion, on the data as loaded */
+  E.prepScanBase = (ds, cfg) => {
+    const items = cfg.items.filter((i) => i.on), w = cfg.waferCol, rows = ds.rows;
+    const byW = new Map();
+    rows.forEach((r, i) => { const k = r[w]; if (k == null || k === '') return; if (!byW.has(k)) byW.set(k, []); byW.get(k).push(i); });
+    const dups = [...byW].filter(([, a]) => a.length > 1).map(([k, a]) => ({ wafer: k, n: a.length, idx: a,
+      diff: items.filter((it) => new Set(a.map((i) => num(rows[i][it.name])).filter((v) => v != null)).size > 1).map((it) => it.name) }));
+    const units = [];
+    const cOf = (r) => E.cat(r[cfg.condCol]);
+    for (const it of items) {
+      const vb = rows.filter((r) => cOf(r) === cfg.baseline).map((r) => num(r[it.name])).filter((v) => v != null);
+      const sb = App.stats(vb), mb = median(vb.filter((v) => v > 0));
+      for (const c of cfg.cips) {
+        const vc = rows.filter((r) => cOf(r) === c).map((r) => num(r[it.name])).filter((v) => v != null);
+        if (vc.length < 3 || vb.length < 3) continue;
+        const sc = App.stats(vc), mc = median(vc.filter((v) => v > 0));
+        let factor = null, ratio = null;
+        if (mb > 0 && mc > 0) { ratio = mc / mb; const lr = Math.log10(ratio), n = Math.round(lr); if (n !== 0 && Math.abs(lr - n) < 0.08) factor = 10 ** -n; }
+        const k = sb.sd > 0 ? Math.abs(sc.mean - sb.mean) / sb.sd : null;
+        if (factor != null || (k != null && k > 20)) units.push({ item: it.name, cond: c, ratio, factor, k, medB: mb, medC: mc });
+      }
+    }
+    return { dups, units };
+  };
+  /** extreme outliers per item within each group × condition population: modified z (MAD) > 6, IQR ×3 fallback; log scale for fold items */
+  E.prepScanOutliers = (ds, cfg, excl) => {
+    const items = cfg.items.filter((i) => i.on), w = cfg.waferCol, rows = ds.rows;
+    const gOf = (r) => (cfg.groupCol ? E.cat(r[cfg.groupCol]) : '全部'), cOf = (r) => E.cat(r[cfg.condCol]);
+    const out = [];
+    for (const it of items) {
+      const pops = new Map();
+      rows.forEach((r, i) => { let v = num(r[it.name]); if (v == null) return; if (it.metric === 'fold') { if (v <= 0) return; v = Math.log10(v); } const k = `${gOf(r)}|${cOf(r)}`; if (!pops.has(k)) pops.set(k, []); pops.get(k).push({ i, v }); });
+      const flagged = [], tails = [];
+      for (const [k, a] of pops) {
+        if (a.length < 8) continue;
+        const vals = a.map((x) => x.v), med = median(vals), mad = median(vals.map((v) => Math.abs(v - med)));
+        let test;
+        if (mad > 0) test = (v) => { const z = (0.6745 * (v - med)) / mad; return Math.abs(z) > 6 ? z : null; };
+        else { const st = App.stats(vals), iqr = st.q3 - st.q1; if (!(iqr > 0)) continue; test = (v) => (v < st.q1 - 3 * iqr || v > st.q3 + 3 * iqr ? (v - med) / Math.max(iqr, 1e-12) : null); }
+        const hits = [];
+        for (const x of a) { const z = test(x.v); if (z != null) { const r = rows[x.i]; hits.push({ wafer: r[w], group: gOf(r), cond: cOf(r), value: num(r[it.name]), z, excluded: excl?.has(`${r[w]}|${it.name}`) || false }); } }
+        // many points past the fence = a tail or a cluster (campaign, bimodal), not isolated outliers → noted, not flagged
+        if (hits.length > Math.max(3, Math.round(0.005 * a.length))) { tails.push(`${k.replace('|', ' × ')}：${hits.length} 點集中在尾端，比較像真實分布而不是離群，未列入`); continue; }
+        flagged.push(...hits);
+      }
+      if (flagged.length || tails.length) out.push({ item: it.name, rows: flagged.sort((p, q) => Math.abs(q.z) - Math.abs(p.z)), tails });
+    }
+    return out;
+  };
+  /** apply the user's pre-processing choices: duplicate handling → unit scaling → point exclusions */
+  E.applyPrep = (ds, cfg, prep, stage = 'all') => {
+    const items = cfg.items.filter((i) => i.on), w = cfg.waferCol;
+    let rows = ds.rows;
+    if (prep.dup && prep.dup !== 'keep') {
+      const byW = new Map(), order = [];
+      for (const r of rows) { const k = r[w]; if (k == null || k === '') { order.push([null, [r]]); continue; } if (!byW.has(k)) { byW.set(k, []); order.push([k, byW.get(k)]); } byW.get(k).push(r); }
+      rows = [];
+      for (const [k, a] of order) {
+        if (a.length === 1 || k == null) { rows.push(a[0]); continue; }
+        if (prep.dup === 'drop') continue;
+        if (prep.dup === 'first') { rows.push(a[0]); continue; }
+        const o = { ...a[0] };
+        for (const it of items) { const v = a.map((r) => num(r[it.name])).filter((x) => x != null); o[it.name] = v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; }
+        rows.push(o);
+      }
+    }
+    const sc = prep.scale || {};
+    if (Object.keys(sc).length) rows = rows.map((r) => { let o = r; const c = E.cat(r[cfg.condCol]); for (const it in sc) { const f = sc[it]?.[c]; if (f != null && f !== 1 && num(r[it]) != null) { if (o === r) o = { ...r }; o[it] = r[it] * f; } } return o; });
+    if (stage === 'all' && prep.excl && prep.excl.size) rows = rows.map((r) => { let o = r; for (const it of items) if (prep.excl.has(`${r[w]}|${it.name}`)) { if (o === r) o = { ...r }; o[it.name] = null; } return o; });
+    return { ...ds, rows };
+  };
 
   // ------------------------------------------------------------------ data layer: link a second table by wafer id
   /** canonical wafer key: "UAB123.01" / "uab123-1" / "UAB123#01" → "UAB123.01"; otherwise trimmed upper-case */
@@ -405,21 +491,31 @@
     const rowsG = (cfg.groupCol ? ds.rows.filter((r) => E.cat(r[cfg.groupCol]) === group) : ds.rows).filter((r) => num(r[itemName]) != null);
     const cRows = rowsG.filter((r) => E.cat(r[cfg.condCol]) === cip), bRows = rowsG.filter((r) => E.cat(r[cfg.condCol]) === cfg.baseline);
     const out = [];
+    // layer relevance of a tool column to this item (v3.3): same layer first; a column of another layer is scanned but marked off-layer
+    const Li = RU().layer(itemName);
+    const parseL = (L) => { const m = (L || '').match(/^(TM|TV|M|V)(\d+)$/i); return m ? { kind: m[1].toUpperCase().endsWith('V') ? 'V' : 'M', top: m[1].toUpperCase().startsWith('T'), n: +m[2] } : null; };
+    // adjacent = the via directly below / above a metal (V n-1, V n ↔ M n) within the same stack (TM/TV vs M/V)
+    const idx = (L) => { const q = parseL(L); return q ? { top: q.top, i: q.n * 2 + (q.kind === 'V' ? 1 : 0) } : null; };   // M n → 2n, V n → 2n+1: neighbours are within 2 steps (V n-1, M n-1, V n, M n+1)
+    const layerRel = (col) => { const Lc = RU().layer(col); if (!Lc || !Li) return 'any'; if (Lc === Li) return 'same'; const a = idx(Li), b = idx(Lc); if (!a || !b || a.top !== b.top) return 'off'; const dd = Math.abs(a.i - b.i); return dd === 1 || (dd === 2 && a.i % 2 === 0 && b.i % 2 === 0) ? 'adj' : 'off'; };   // via ↔ its two metals; metal ↔ metal one level down/up (CMP topography)
     for (const c of E.factorColumns(ds, cfg)) {
       const keyFn = (r) => { const v = r[c.name]; return v == null || v === '' ? null : E.cat(v); };
       const st = E.factorLevels(cRows, bRows, itemName, cell, keyFn);
       if (st.nLevels < 1 || st.nLevels > 40) continue;
       const cross = new Map();
       for (const r of rowsG) { const k = keyFn(r); if (k == null) continue; if (!cross.has(k)) cross.set(k, new Set()); cross.get(k).add(E.cat(r[cfg.condCol])); }
-      const confound = [...cross.values()].every((set) => set.size === 1) && cross.size > 1;
+      // confounded for THIS cip: every level the CIP wafers ran on has no BSL wafer (v3.2: judged per CIP, not over all conditions)
+      const cipLv = st.levels.filter((l) => l.n > 0);
+      const confound = (cipLv.length > 0 && cipLv.every((l) => l.nB === 0)) || ([...cross.values()].every((set) => set.size === 1) && cross.size > 1);
       let note = '';
-      if (confound) note = '與條件完全混淆：CIP 與 BSL 走不同機台，無法分辨是機台還是條件';
+      if (confound) note = `CIP 走的 ${cipLv.map((l) => l.v).join('／')} 沒有 BSL wafer 可對照：機台與條件混淆，無法分辨`;
       else if (st.tested.length < 2) note = st.nLevels === 1 ? `CIP 全部走 ${st.worst.v}（只有一個 level，無法比較）` : '每個 level 的 wafer 少於 3 片';
-      out.push({ col: c.name, ...st, confound, note });
+      out.push({ col: c.name, ...st, confound, note, layerRel: layerRel(c.name), colLayer: RU().layer(c.name) });
     }
     const adj = E.bh(out.map((o) => o.p));
-    out.forEach((o, i) => { o.pAdj = adj[i]; o.hit = !o.confound && o.pAdj != null && o.pAdj < 0.1 && o.eps >= 0.1 && o.spread != null && o.spread >= 0.5 && o.spread >= 0.2 * Math.abs(cell.k ?? 0); if (!o.hit && !o.note && o.pAdj != null && o.pAdj < 0.1 && o.spread != null) o.note = `各 level 差 ${o.spread.toFixed(2)}σ，相對整體偏移不大 → 比較像條件本身的差異`; });
-    out.sort((a, b) => (b.hit - a.hit) || (b.eps ?? -1) - (a.eps ?? -1) || (a.pAdj ?? 2) - (b.pAdj ?? 2));
+    out.forEach((o, i) => { o.pAdj = adj[i]; o.hit = !o.confound && o.pAdj != null && o.pAdj < 0.1 && o.eps >= 0.1 && o.spread != null && o.spread >= 0.5 && o.spread >= 0.2 * Math.abs(cell.k ?? 0); if (!o.hit && !o.note && o.pAdj != null && o.pAdj < 0.1 && o.spread != null) o.note = `各 level 差 ${o.spread.toFixed(2)}σ，相對整體偏移不大 → 比較像條件本身的差異`; if (o.layerRel === 'off') o.note = `${o.colLayer} 層機台，非本層${Li ? ` ${Li}` : ''}${o.note ? '；' + o.note : ''}`; });
+    const REL = { same: 0, any: 1, adj: 2, off: 3 };
+    out.sort((a, b) => (b.hit - a.hit) || REL[a.layerRel] - REL[b.layerRel] || (b.eps ?? -1) - (a.eps ?? -1) || (a.pAdj ?? 2) - (b.pAdj ?? 2));
+    out.itemLayer = Li; out.offOnly = out.length > 0 && out.every((o) => o.layerRel === 'off');
     return out;
   };
   /** categorical columns usable as factors (tool, chamber, route…): text, not key / condition / group / time columns */
@@ -441,6 +537,19 @@
     const d = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
     return d > 0 ? (n * sxy - sx * sy) / d : null;
   };
+  /** data-quality lines with the same item / same cause merged: "CIP-C 在 P2 沒有 wafer", "Rc_V1 @ G1：BSL σ = 0" */
+  E.dataQualityLines = (res, cfg, mode) => {
+    const na = res.naList[mode], out = [], used = new Set();
+    const nItems = res.items.filter((i) => i.kind === mode).length, multiG = res.groups.length > 1;
+    for (const g of res.groups) for (const c of cfg.cips) {
+      const hit = na.filter((x) => x.group === g && x.cip === c && x.reason === `${c} 無資料`);
+      if (nItems > 1 && hit.length === nItems) { out.push(`${c}${multiG ? ` 在 ${g}` : ''} 沒有 wafer`); hit.forEach((x) => used.add(x)); }
+    }
+    const rest = na.filter((x) => !used.has(x)), byKey = new Map();
+    for (const x of rest) { const k = `${RU().parseName(x.item.name).short}${multiG ? ` @ ${x.group}` : ''}：${x.reason}`; if (!byKey.has(k)) byKey.set(k, 0); byKey.set(k, byKey.get(k) + 1); }
+    for (const [k, n] of byKey) out.push(n > 1 && !/無資料/.test(k) ? k : k);
+    return out;
+  };
   E.summaryText = (res, cfg, meta, mode = 'wat') => {
     const L = [], th = res.th;
     const f4 = (v) => (typeof v === 'number' && isFinite(v) ? (Math.abs(v) < 1e-3 && v !== 0 ? v.toExponential(3) : String(+v.toPrecision(4))) : '—');
@@ -453,6 +562,10 @@
       : `燈號：K 綠 ≤ ${th.kG}σ、橘 > ${th.kO}σ（yield 以 wafer 為單位）`);
     L.push(`結果：綠 ${cnt.green}、黃 ${cnt.yellow}、橘 ${cnt.orange}${cnt.na ? `、無法判定 ${cnt.na}` : ''}${mode === 'inline' ? `；變異異常 ${res.varCnt.orange + res.varCnt.yellow}` : ''}`);
     if (!fs.length) L.push('結論：全部在綠燈範圍內，CIP 與 BSL match。');
+    // v3.2: a check sentence that every HL repeats is printed once at the end; an explanatory sentence (what 片內 σ means) once only
+    const ckOf = fs.map((f) => (meta?.checks ? meta.checks(f) : f.dx.checks).slice());
+    const common = fs.length > 1 ? ckOf[0].filter((t) => ckOf.every((a) => a.includes(t))) : [];
+    const seenExpl = new Set();
     fs.forEach((f, i) => {
       const c = f.cell;
       L.push(`${i + 1}. ${f.dx.title}`);
@@ -461,14 +574,18 @@
         else if (c.metric === 'fold') L.push(`   median ${f4(c.median)} vs BSL ${f4(c.bmedian)}（N ${c.n} / ${c.bn}）`);
         else L.push(`   ${c.cip} mean ${f4(c.mean)} vs BSL ${f4(c.bmean)}（N ${c.n} / ${c.bn}）`);
       }
-      L.push(`   ${f.dx.verdict}`);
+      const expl = /σ 是/.test(f.dx.verdict || '');
+      if (!expl) L.push(`   ${f.dx.verdict}`);
+      else if (!seenExpl.has(f.which)) { seenExpl.add(f.which); L.push(`   ${f.dx.verdict}`); }
       if (meta?.factor) { const fv = meta.factor(f); if (fv) L.push(`   ${fv}`); }
-      L.push(`   建議檢查：${meta?.checks ? meta.checks(f).join('；') : f.dx.checks.join('、')}`);
+      const own = ckOf[i].filter((t) => !common.includes(t));
+      if (own.length) L.push(`   建議檢查：${own.join('；')}`);
       if (meta?.causes) { const cz = meta.causes(f); if (cz.length) L.push(`   物理機制（依證據）：${cz.join('、')}`); }
     });
-    const na = res.naList[mode];
-    L.push(RU().kbVersion());
-    if (na.length) L.push(`資料品質：${na.map((c) => `${RU().parseName(c.item.name).short}@${c.group}（${c.reason}）`).join('、')}`);
+    if (common.length) L.push(`建議檢查（全部 HL 共同）：${common.join('；')}`);
+    if (meta?.kbOn) L.push(RU().kbVersion());
+    const dq = E.dataQualityLines(res, cfg, mode);
+    if (dq.length) L.push(`資料品質：${dq.join('；')}`);
     return L.join('\n');
   };
 })();

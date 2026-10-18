@@ -17,8 +17,9 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 1000 }, acceptDownloads: true, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
+  await page.addInitScript(() => { try { localStorage.setItem('pdat:rpt-kb-on', 'true'); } catch (e) {} });   // v3.0: knowledge-base suggestions default OFF; these assertions describe the ON state
   const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => { errors.push(e.message); if (process.env.ERRSTACK) console.log('PAGEERROR @', new Date().toISOString(), e.stack); });
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
@@ -120,6 +121,16 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
   await page.click('.tmx .mc >> nth=0');
   await page.waitForSelector('.fwin .js-plotly-plot');
   ok(true, 'matrix cell → floating window');
+  // v3.1 trend x-axis: default wafer order (linear), ordering column selectable, 欄位值 → date axis; control also inside the window
+  const tx1 = await page.evaluate(() => { const w = document.querySelector('.fwin'); const p = w.querySelector('.fw-plots .js-plotly-plot'); return { type: p._fullLayout.xaxis.type, title: p._fullLayout.xaxis.title.text, ctrl: !!w.querySelector('[data-xby]'), opts: [...w.querySelectorAll('[data-xby] option')].map((o) => o.value), paneSeq: document.querySelector('#trend .ctrl [data-x=seq]').classList.contains('on') }; });
+  console.log('trend x:', JSON.stringify(tx1));
+  ok(tx1.type === 'linear' && /wafer 順序/.test(tx1.title) && tx1.ctrl && tx1.opts.length >= 2 && tx1.paneSeq, 'trend default x = wafer order sorted by date; ordering column select in pane and window');
+  await page.evaluate(() => document.querySelector('.fwin [data-x=col]').click()); await page.waitForTimeout(600);
+  ok(await page.evaluate(() => document.querySelector('.fwin .fw-plots .js-plotly-plot')._fullLayout.xaxis.type === 'date' && document.querySelector('#trend .ctrl [data-x=col]').classList.contains('on')), '欄位值 → date x-axis; pane control follows (shared state)');
+  await page.evaluate(() => { const s = document.querySelector('.fwin [data-xby]'); s.value = App.rpt.cfg.waferCol; s.dispatchEvent(new Event('change')); }); await page.waitForTimeout(600);
+  ok(await page.evaluate(() => /wafer 順序/.test(document.querySelector('.fwin .fw-plots .js-plotly-plot')._fullLayout.xaxis.title.text) && document.querySelector('.fwin .fw-plots .js-plotly-plot')._fullLayout.xaxis.type === 'linear'), 'ordering by wafer id (text) falls back to sequence x');
+  await page.evaluate(() => { const s = document.querySelector('.fwin [data-xby]'); s.value = App.rpt.cfg.dateCol; s.dispatchEvent(new Event('change')); }); await page.waitForTimeout(600);
+  await page.evaluate(() => document.querySelector('.fwin [data-x=seq]').click()); await page.waitForTimeout(600);
   await page.screenshot({ path: `${SHOT}/r3_trend.png` });
   await page.evaluate(() => App.rptUI.closeAllWins());
 
@@ -164,18 +175,22 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   console.log('ppt slides:', info.map((x) => `${x.title}[t${x.tables}/p${x.pics}]`).join(' | '));
   const has = (rx, f) => info.some((x) => rx.test(x.title) && f(x));
   ok(has(/WAT 點燈表/, (x) => x.tables === 1), 'PPT: WAT light table (native table)');
-  ok(has(/WAT HL/, (x) => x.pics === 2), 'PPT: WAT HL slides with trend + correlation');
-  ok(has(/WAT 總覽 Trend/, (x) => x.pics >= 8), 'PPT: WAT overview trend matrix');
-  ok(has(/Inline 點燈表/, (x) => x.tables === 1) && has(/Inline HL/, (x) => x.pics >= 1) && has(/Inline 總覽 Trend/, (x) => x.pics >= 8), 'PPT: Inline light table, HL and overview trend');
+  // v3.3 design language: title = item + shift; HL detail = trend + partner (2 pictures) + 同組其他 item table; overview = abnormal 2×2 then green 3×3 appendix; conclusions page last
+  ok(has(/^Rc_V12 @ TMTQ11：FAB15 \+2\.33σ$/, (x) => x.pics === 2 && x.tables === 1), 'PPT: HL detail titled "item @ group：CIP shift", trend + correlation + 同組其他 item table');
+  ok(has(/WAT 總覽 trend ｜ TMRX12/, (x) => x.pics === 3) && has(/WAT 總覽 trend（附錄：綠燈 item） ｜ TMRX12/, (x) => x.pics === 5), 'PPT: overview trend split — abnormal items 2×2 (3 charts @ TMRX12), green items 3×3 appendix (5 charts)');
+  ok(has(/Inline 點燈表/, (x) => x.tables === 1) && has(/^M13 THK @ TMWF54/, (x) => x.pics >= 1) && has(/Inline 總覽 trend/, (x) => x.pics >= 1), 'PPT: Inline light table, merged HL detail and overview trend');
+  ok(info[info.length - 1].title === '結論' && info[0].title.startsWith('BEOL 分析戰報'), 'PPT: cover first, 結論 last (never ends on a chart page)');
 
   // ---- commonality: factor scan on Rc_V12 @ TMTQ11 (tool labels were assigned so CH_B carries the shift)
   const fi = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('Rc_V12')));
   await page.click(`.hl-row[data-hl="${fi}"]`); await page.waitForTimeout(600);
-  const xc = await page.evaluate(() => [...document.querySelectorAll('.xcs .xc')].map((d) => ({ label: d.querySelector('.xl').innerText, state: d.className.replace('xc ', ''), txt: d.querySelector('.xt').innerText })));
+  // v3.2: cross-check cards are gone from the HL detail (the check list carries them); the same objects still feed the PPT HL table
+  const xc = await page.evaluate(() => App.rptUI.crossChecks(App.rpt.res.findings.wat[App.rpt.hl.wat]).map((x) => ({ label: x.label, state: x.state, txt: x.text })));
+  ok(await page.evaluate(() => !document.querySelector('.xcs')), 'HL detail has no cross-check cards (check list only)');
   console.log('cross-checks:', xc.map((x) => `${x.label}:${x.state}:${x.txt}`).join(' | '));
   const tool = xc.find((x) => x.label === '機台');
   ok(tool && tool.state === 'ok' && /V12_ETCH_CH：CH_B/.test(tool.txt) && /CIP \d+% 走 CH_B/.test(tool.txt) && !/p ?=/.test(tool.txt), `tool card: one-line verdict, no p-values (${tool?.txt})`);
-  ok(xc.find((x) => x.label === 'Inline')?.state === 'ok' && /V12 CD AEI/.test(xc.find((x) => x.label === 'Inline').txt) && /r = −0\.\d+/.test(xc.find((x) => x.label === 'Inline').txt), 'Inline card: WAT ↔ inline line up, r shown');
+  ok(xc.find((x) => x.label === 'Inline')?.state === 'ok' && /V12 CD AEI −2\.79σ 有關聯/.test(xc.find((x) => x.label === 'Inline').txt) && !/r = /.test(xc.find((x) => x.label === 'Inline').txt), 'Inline card: WAT ↔ inline line up (shift + 有關聯, no r)');
   ok(xc.find((x) => x.label === 'Yield')?.state === 'ok' && /Bin7_open/.test(xc.find((x) => x.label === 'Yield').txt), 'Yield card lists abnormal yield items only');
   // evidence-ranked mechanisms (v2.7／v2.8: demoted to one line under the single check list)
   const cz = await page.evaluate(() => [...document.querySelectorAll('.mech .mz')].map((t) => ({ st: t.className.replace('mz ', ''), t: t.innerText.replace(/\s+/g, ' ') })));
@@ -184,16 +199,40 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   // single check list (v2.8): every row has a status, an evidence note and opens the check window
   const cks = await page.evaluate(() => [...document.querySelectorAll('.cks li')].map((t) => ({ k: t.className.replace('ck ', ''), a: t.querySelector('a')?.innerText || '', n: t.querySelector('.cn')?.innerText || '', z: !!t.querySelector('.ckz') })));
   console.log('checks:', cks.map((x) => `${x.k}:${x.a}:${x.n}`).join(' | '));
-  ok(cks.some((x) => x.k === 'ok' && /V12 via CD/i.test(x.a) && /r = −0\.8\d 有關聯/.test(x.n)) && cks.some((x) => x.k === 'ok' && /chamber/i.test(x.a) && /CH_B/.test(x.n)) && cks.some((x) => x.k === 'need' && /匯入/.test(x.n)), 'checks: ✔ inline with r, ✔ tool hit, ○ missing data → import');
+  ok(cks.some((x) => x.k === 'ok' && /V12 via CD/i.test(x.a) && /−2\.79σ 有關聯/.test(x.n)) && cks.some((x) => x.k === 'ok' && /chamber/i.test(x.a) && /CH_B/.test(x.n)) && cks.some((x) => x.k === 'need' && /匯入/.test(x.n)), 'checks: ✔ inline (shift + 有關聯), ✔ tool hit, ○ missing data → import');
   ok(cks.every((x) => x.z) && cks.length <= 6, 'every check row opens the check window (🔍)');
   await page.evaluate(() => document.querySelectorAll('.cks .ckz')[0].click()); await page.waitForSelector('.fwin #ckCorr.js-plotly-plot'); await page.waitForTimeout(500);
   const ckw = await page.evaluate(() => ({ v: document.querySelector('.fwin .tw-v').innerText, x: document.querySelector('.fwin [data-ck=x]').value, trend: !!document.querySelector('.fwin #ckTrend.js-plotly-plot'), imp: !!document.querySelector('.fwin [data-ck=imp]') }));
   ok(/V12 CD AEI/.test(ckw.x) && /r = −0\.8\d/.test(ckw.v) && /有關聯/.test(ckw.v) && /方向與物理預期一致/.test(ckw.v) && ckw.trend && ckw.imp, `check window: X auto = V12 CD AEI, verdict with r + direction, resonance trend, import button (${ckw.v.slice(0, 60)})`);
   await page.evaluate(() => { document.querySelector('.fwin [data-ck=x]').value = 'M12 THK~A'; document.querySelector('.fwin [data-ck=x]').dispatchEvent(new Event('change')); }); await page.waitForTimeout(500);
   ok(await page.evaluate(() => /關聯性不大|弱關聯/.test(document.querySelector('.fwin .tw-v').innerText)), 'user can switch X; unrelated item → 關聯性不大');
+  // v3.1: group / condition filters + trend x-axis control inside the check window
+  const ck31 = await page.evaluate(() => { const w = document.querySelector('.fwin'); return { g: !!w.querySelector('[data-ck=g]'), conds: [...w.querySelectorAll('[data-cond]')].map((c) => c.dataset.cond + (c.classList.contains('on') ? '*' : '')), xs: !!w.querySelector('.ck-x [data-x]'), seqOn: w.querySelector('.ck-x [data-x=seq]')?.classList.contains('on'), by: w.querySelector('.ck-x [data-xby]')?.value, xt: w.querySelector('#ckTrend')._fullLayout.xaxis.type, n: (w.querySelector('.tw-v').innerText.match(/N (\d+)/) || [])[1] }; });
+  console.log('check window v3.1:', JSON.stringify(ck31));
+  ok(ck31.g && ck31.conds.length === 2 && ck31.conds.every((c) => /\*$/.test(c)) && ck31.xs && ck31.seqOn && ck31.xt === 'linear', 'check window: group select, condition chips (all on), trend x = wafer 順序 by default');
+  await page.evaluate(() => { const w = document.querySelector('.fwin'); w.querySelector('[data-ck=g]').value = '全部'; w.querySelector('[data-ck=g]').dispatchEvent(new Event('change')); }); await page.waitForTimeout(400);
+  const nAll = await page.evaluate(() => +(document.querySelector('.fwin .tw-v').innerText.match(/N (\d+)/) || [])[1]);
+  await page.evaluate(() => document.querySelector('.fwin [data-cond]').click()); await page.waitForTimeout(400);
+  const ck31b = await page.evaluate(() => ({ n: +(document.querySelector('.fwin .tw-v').innerText.match(/N (\d+)/) || [])[1], off: [...document.querySelectorAll('.fwin [data-cond]')].filter((c) => !c.classList.contains('on')).length }));
+  ok(nAll > +ck31.n && ck31b.off === 1 && ck31b.n < nAll, `group → 全部 raises N (${ck31.n} → ${nAll}); un-ticking BSL drops it (${ck31b.n})`);
+  await page.evaluate(() => document.querySelector('.fwin .ck-x [data-x=col]').click()); await page.waitForTimeout(400);
+  ok(await page.evaluate(() => document.querySelector('.fwin #ckTrend')._fullLayout.xaxis.type === 'date'), 'X 軸 → 欄位值 with a date ordering column plots dates');
+  await page.evaluate(() => document.querySelector('.fwin .ck-x [data-x=seq]').click()); await page.waitForTimeout(300);
   await page.keyboard.press('Escape');
+  // v3.1: 🔍 on the 機台／chamber row opens the standard tool analysis, not the correlation window
+  await page.evaluate(() => { const li = [...document.querySelectorAll('.cks li')].find((t) => /機台|chamber/i.test(t.querySelector('a').innerText)); li.querySelector('.ckz').click(); });
+  await page.waitForSelector('.fwin #twBox.js-plotly-plot'); await page.waitForTimeout(400);
+  ok(await page.evaluate(() => /機台分析/.test(document.querySelector('.fwin .fw-t').innerText) && !document.querySelector('.fwin #ckCorr')), '🔍 on tool row → 機台分析 window (standard tool analysis)');
+  await page.keyboard.press('Escape');
+  // v3.0 knowledge-base switch: OFF → checks are the data cross-check items only, no mechanism line, no r anywhere
+  await page.evaluate(() => { document.querySelector('#kbOn').click(); }); await page.waitForTimeout(500);
+  const off = await page.evaluate(() => ({ on: App.rpt.kbOn, rows: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')), mech: !!document.querySelector('.mech'), txt: document.querySelector('.pane.hl').innerText }));
+  console.log('KB off:', off.rows.join(' | '));
+  ok(!off.on && !off.mech && off.rows.some((t) => /^ok:✔ 同層 V12 CD AEI −2\.79σ 有關聯/.test(t)) && off.rows.some((t) => /^ok:.*機台／chamber/.test(t)) && off.rows.some((t) => /yield／bin/.test(t)), 'KB off: same-layer / adjacent / yield / tool rows only, no physics');
+  ok(!/r = /.test(off.txt), 'no correlation coefficient shown on the report (shift + 對上與否 only)');
+  await page.evaluate(() => { document.querySelector('#kbOn').click(); }); await page.waitForTimeout(500);
   // tool analysis window: verdict line + run-rate bars (no table) + weekly chart + box plot with K annotations
-  await page.evaluate(() => document.querySelector('.xcs .xc[data-xc]:nth-child(2)') && [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台').click());
+  await page.evaluate(() => { const li = [...document.querySelectorAll('.cks li')].find((t) => /機台|chamber/i.test(t.querySelector('a').innerText)); li.querySelector('.ckz').click(); });
   await page.waitForSelector('.fwin #twBox.js-plotly-plot'); await page.waitForTimeout(700);
   const tw = await page.evaluate(() => { const w = document.querySelector('.fwin'); const bx = w.querySelector('#twBox'), wk = w.querySelector('#twWeek'); return {
     verdict: w.querySelector('.tw-v')?.innerText || '', table: !!w.querySelector('table'), rate: !!w.querySelector('#twRate.js-plotly-plot'),
@@ -211,7 +250,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   await page.screenshot({ path: `${SHOT}/r7_factor.png` }); await page.keyboard.press('Escape');
   const fj = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('Con_M13')));
   await page.click(`.hl-row[data-hl="${fj}"]`); await page.waitForTimeout(500);
-  const cf = await page.evaluate(() => document.querySelector('.xcs .xc .xl') && [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台')?.querySelector('.xt').innerText || '');
+  const cf = await page.evaluate(() => App.rptUI.factorVerdict(App.rpt.res.findings.wat[App.rpt.hl.wat]));
   ok(/混淆/.test(cf) && /M12_CMP_Tool/.test(cf), `confounded tool column flagged in the card (${cf})`);
   const sm = await page.evaluate(() => App.rptUI.summary());
   ok(/V12_ETCH_CH：CH_B/.test(sm), 'summary text carries the factor verdict');
@@ -224,7 +263,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
     ok(L.cols.includes('M12_ECP Tool') && /資料層/.test(L.chip || ''), `columns added (${L.cols.length}) and data-layer chip shown`);
     const li = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('LK_M12')));
     await page.click(`.hl-row[data-hl="${li}"]`); await page.waitForTimeout(600);
-    const lf = await page.evaluate(() => [...document.querySelectorAll('.xcs .xc')].find((d) => d.querySelector('.xl').innerText === '機台')?.querySelector('.xt').innerText || '');
+    const lf = await page.evaluate(() => App.rptUI.factorVerdict(App.rpt.res.findings.wat[App.rpt.hl.wat]));
     ok(/M12_ECP Tool：ECP02/.test(lf) && !/ECP09/.test(lf), `linked column found by the factor scan: ${lf}`);
     const k0 = await page.evaluate(() => App.rpt.res.cells[App.rpt.res.items.find((i) => i.name.startsWith('Rc_V12')).name].TMTQ11.FAB15.k);
     ok(near(k0, R.rc_TMTQ11), 'K values unchanged after linking (no row duplication)');
@@ -280,7 +319,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
     const pick = (x) => ({ k: x.k, sd: x.sdRatio, wiw: x.wiwRatio, level: x.level, varLevel: x.varLevel });
     return { mode: App.rpt.mode, hasWiw: r.hasWiw, nItems: r.items.length, base: App.rpt.cfg.baseline, watDisabled: document.querySelector('#mods button[data-mod=wat]').disabled,
       v12: pick(g('V12 CD', 'TMTQ11')), thk: pick(g('M13 THK', 'TMWF54')), m12: pick(g('M12 CD', 'TMRX12')), nf: r.findings.inline.length,
-      kinds: r.findings.inline.map((f) => `${f.type}:${f.which || ''}:${f.cell.item.name}@${f.cell.group}`) };
+      kinds: r.findings.inline.map((f) => `${f.varOf ? 'merged' : f.type}:${f.which || ''}:${f.cell.item.name}@${f.cell.group}`) };
   });
   console.log('inline:', JSON.stringify(I));
   const Q = REF.inline;
@@ -289,10 +328,12 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   ok(near(I.v12.k, Q.v12cd_TMTQ11.k) && I.v12.level === 'orange', `V12 CD@TMTQ11 K=${I.v12.k?.toFixed(2)} (pandas ${Q.v12cd_TMTQ11.k.toFixed(2)})`);
   ok(near(I.thk.wiw, Q.m13thk_TMWF54.wiw) && I.thk.varLevel === 'orange', `M13 THK@TMWF54 WIW σ ×${I.thk.wiw?.toFixed(2)} (pandas ×${Q.m13thk_TMWF54.wiw.toFixed(2)}) orange`);
   ok(near(I.m12.sd, Q.m12cd_TMRX12.sd) && I.m12.varLevel === 'orange', `M12 CD@TMRX12 W2W σ ×${I.m12.sd?.toFixed(2)} (pandas ×${Q.m12cd_TMRX12.sd.toFixed(2)}) orange`);
-  ok(I.kinds.some((k) => /^var:wiw:M13 THK/.test(k)) && I.kinds.some((k) => /^var:w2w:M12 CD/.test(k)), 'variation findings: WIW for M13 THK, W2W for M12 CD');
+  console.log('inline findings:', I.kinds.join(' | '));
+  ok(I.kinds.some((k) => /^merged:wiw:M13 THK@TMWF54/.test(k)) && I.kinds.some((k) => /^(var|merged):w2w:M12 CD/.test(k)) && I.kinds.filter((k) => /M13 THK@TMWF54/.test(k)).length === 1, 'v3.2: mean + WIW of the same cell merged into ONE HL (M13 THK@TMWF54); W2W finding for M12 CD');
+  ok(await page.evaluate(() => { const f = App.rpt.res.findings.inline.find((x) => x.varOf); return /K −4\.1\dσ，片內 σ ×2\.40/.test(f.dx.title) && /片內 σ/.test(document.querySelector('.hl-row .pill')?.innerText || ''); }), 'merged HL title "K −4.12σ，片內 σ ×2.40" and list pill carries both');
   const iw = await page.evaluate(() => App.rpt.res.findings.inline.map((f) => [f.dx.title, f.dx.mean, f.dx.verdict, f.dx.causes.join('、')].join(' ｜ ')));
   iw.slice(0, 6).forEach((w) => console.log('   ▸ ' + w.slice(0, 200)));
-  ok(iw.some((w) => /M13 THK/.test(w) && /片內均勻性變差/.test(w) && /CMP/.test(w)), 'WIW finding wording (CMP edge profile)');
+  ok(iw.some((w) => /M13 THK/.test(w) && /片內 σ/.test(w) && /CMP/.test(w)), 'WIW wording survives the merge (片內 σ + CMP cause)');
   ok(iw.some((w) => /V12 CD/.test(w) && /WAT/.test(w)), 'inline mean finding mentions WAT impact');
   const rad = await page.evaluate(() => [...document.querySelectorAll('#hlDet .fig .ft')].some((f) => /徑向分布/.test(f.innerText)));
   ok(rad, 'first inline HL (片內 σ) shows the radial profile');

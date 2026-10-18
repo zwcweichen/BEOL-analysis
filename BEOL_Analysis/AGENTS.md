@@ -1,7 +1,7 @@
 # BEOL_Analysis：Agent 接手文件
 
 > 給接手的 AI agent（或工程師）閱讀。讀完這份就能繼續開發，不必回頭看對話紀錄。
-> 版本：BEOL 分析戰報 **v2.9**（2026-10-12）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
+> 版本：BEOL 分析戰報 **v3.3**（2026-10-19）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
 
 ---
 
@@ -166,6 +166,10 @@ node tests/e2e_variants.js               # 21 項：沒為工具設計過的資�
 - v1.0：WAT 戰報（K-shift、點燈表、診斷、Trend、Correlation、HTML 匯出）
 - v2.0：改名 BEOL；LK 改用倍數＋log 軸；SPA 改用固定值異常比例；新增 Inline 模組（均值、W2W、WIW、徑向分布、對 WAT 的影響）
 - v2.1：點燈格只顯示數字；戰報頁可切換分組、比較欄、BSL、CIP；儀表板版面；Trend 矩陣；浮動視窗；PPT 匯出；強化不同欄名的解析；單一 Python 產生器
+- v3.3：`buildPpt` 重寫（frame／bullets／section／kTable／pptFig；docs/PPT_STYLE.md）；`E.scanFactors` 的 `layerRel`／`offOnly`／`itemLayer`；`CIPC[0]` 深藍；UI 說明文字移除
+- v3.2：前處理分頁（`applyPrep`／`renderPrep`／`prepPending`，engine `E.prepScanBase`／`E.prepScanOutliers`／`E.applyPrep`，`S.prep = { dup, scale, excl, ack }`）；`crossChecks` 只供 PPT HL 總表；`checkRows` 灰格 → need；`E.scanFactors` 混淆針對 CIP；findings.inline 同格合併（`f.varOf`）；`E.dataQualityLines`；`summaryText` 去重；`App.toDate` 多格式
+- v3.1：機台列 🔍 → `openToolWin`（`checkRows` 回傳 `tool` 旗標）；檢查視窗 `st.group`／`st.conds`，`corrFig(..., { conds })`；trend X 軸 `S.trend = { x: 'seq'|'col', by }`，helper `orderCols`／`orderBy`／`orderRows`／`trendX`／`trendXCtrl`／`bindTrendX`，所有 trend（含共振圖、PPT）共用
+- v3.0：知識庫建議開關（`S.kbOn`，預設關，`dataChecks`）；r 不顯示（`R.relTxt` 預設不帶 r）；介面小字與頁尾刪除；設定頁四個編號區塊；theme_b.css「工程筆記」風格＋PPT 同步
 - v2.9：PPT 自審——標題只寫現象（`dx.mean` 另存）、封面每燈號一行、HL 總表頁、細節頁預設只橘燈（`#pptDetail`）、rate 類不算 r、其他類別排最後
 - v2.8：其他類別（other_inline／other_yield，統計後綴自動歸類）；單一建議檢查清單＋檢查視窗（`openCheckWin`：X／Y、r 判定、共振 trend、匯入補進後自動重開）；`E.pearson`＋`R.relOf` 用 K 與 r 判定同層／鄰層（strong／weak／flat／opp），措辭不過度推論；長欄名縮寫；H 資料集
 - v2.7：可能原因依證據排序（`rankCauses`：cd／vcd／thk／xlayer／xcd／tool／ext 六類證據，✔／·／✘ 三態）；`App.XLAYER` 第 2 輪（rc←topo／cd、vbd←topo、cap←above）；跨層原因加入 base；文獻第 3 批（#21–#29）；比較欄先看值

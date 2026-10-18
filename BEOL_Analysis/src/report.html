@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BEOL 分析戰報</title>
 <!--INLINE:report/report.css-->
+<!--INLINE:report/theme_b.css-->
 </head>
 <body>
 <header class="top">
@@ -22,6 +23,7 @@
 <div class="legend-bar" id="legendBar"></div>
 <nav class="tabs" id="tabs">
   <button data-tab="setup" class="active">⚙ 設定</button>
+  <button data-tab="prep" disabled>⓪ 前處理</button>
   <button data-tab="report" disabled>① 戰報總覽</button>
   <button data-tab="trend" disabled>② Trend 矩陣</button>
   <button data-tab="corr" disabled>③ Correlation</button>
@@ -29,6 +31,7 @@
 </nav>
 <main>
   <section id="tab-setup" class="tab active"><div id="setup"></div></section>
+  <section id="tab-prep" class="tab"><div id="prep"></div></section>
   <section id="tab-report" class="tab"><div id="report" class="report"></div></section>
   <section id="tab-trend" class="tab"><div id="trend"></div></section>
   <section id="tab-corr" class="tab"><div id="corr"></div></section>

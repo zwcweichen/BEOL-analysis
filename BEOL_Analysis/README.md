@@ -11,6 +11,10 @@ BEOL 後段製程 BSL vs CIP 的固定流程分析工具。這個專案資料夾
 | 資料層 | ✅ v2.4 | 「＋ 連結資料」把機台履歷、yield 等第二個檔案以 wafer id 連進來；顯示配對率；長表自動轉寬表 |
 | 疑似因子 | ✅ v2.3 | 異常 item 自動掃描資料中的機台／chamber 等欄位（Kruskal–Wallis、BH 校正、混淆偵測、ΔK） |
 | 引導式檢查＋機台分析 | ✅ v2.5 | 每條建議檢查帶狀態與一鍵動作；機台分析視窗：run 貨比例、box plot、自訂組合分組 |
+| PPT 公版＋機台層別 | ✅ v3.3 | 工程簡報公版（紅標題、藍字摘要、K 小表、2×2／3×3、結論頁）；機台欄依層別；圖更清楚；產品內無說明文字 |
+| 前處理分頁＋判準一致 | ✅ v3.2 | 單位／重複 wafer／極端值預警與一鍵處置；卡片拿掉；灰格 ○；機台混淆針對 CIP；HL 合併；結論文字去重；多種日期格式 |
+| 檢查視窗自訂＋trend X 軸 | ✅ v3.1 | 機台列 🔍 開機台分析；檢查視窗可選分組、條件、X／Y；trend 預設 X = wafer 順序，可改排序欄／欄位值 |
+| 知識庫開關＋精簡 | ✅ v3.0 | 條件列「知識庫建議」預設關：建議檢查只列同層／鄰層 inline、yield、機台；不顯示 r；介面小字刪除；「工程筆記」風格 |
 | 檢查視窗＋其他類別 | ✅ v2.8 | 每條建議檢查一個 🔍：相關圖（X／Y 可換）、r 判定、共振 trend、缺資料直接匯入補進；range／σ 欄歸「其他」不配對 |
 | 原因依證據排序 | ✅ v2.7 | 可能原因依同層 inline／跨層／機台證據排序：✔ 支持排前、✘ 不支持灰掉 |
 | 交叉比對卡＋跨層 | ✅ v2.6 | HL 上方一行一張：Inline／跨層／機台／Yield；機台視窗加每週 run 貨與 K 標註；下層 CMP topography 繼承的跨層診斷 |
@@ -51,7 +55,7 @@ python make_BEOL_Analysis.py --no-samples     # 不產生範例資料
 
 ## 資料夾內容
 - `AGENTS.md`：接手文件（需求、判斷規則、架構、測試、待辦），給 AI agent 或新同事接續開發時閱讀。
-- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v2.9）。
+- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v3.3）。
 - `src/`：原始碼。
   - `src/report/rules_base.js`：診斷知識庫（資料）；`src/report/rules.js`：知識庫程式。
   - `src/report/engine.js`：計算。

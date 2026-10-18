@@ -90,10 +90,21 @@
       return null;
     }
     if (typeof v !== 'string' || !v.trim()) return null;
-    const s = v.trim().replace(/\//g, '-');
-    if (!/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) return null;
-    const d = new Date(s.replace(' ', 'T'));
-    return isNaN(d) ? null : d;
+    const s = v.trim();
+    const mk = (y, mo, d, hh = 0, mi = 0, ss = 0) => { if (y < 1900 || y > 2200 || mo < 1 || mo > 12 || d < 1 || d > 31) return null; const dt = new Date(y, mo - 1, d, hh, mi, ss); return isNaN(dt) ? null : dt; };
+    let m;
+    // YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD [HH:mm[:ss]] (also ISO with T)
+    if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/))) return mk(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    // DD-MM-YYYY / MM/DD/YYYY: a > 12 → day first; b > 12 → month first; otherwise "/" is read as US (M/D), "-" and "." as D-M
+    if ((m = s.match(/^(\d{1,2})([-\/.])(\d{1,2})\2(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/))) {
+      const a = +m[1], b = +m[3], dmy = a > 12 || (b <= 12 && m[2] !== '/');
+      return mk(+m[4], dmy ? b : a, dmy ? a : b, +(m[5] || 0), +(m[6] || 0), +(m[7] || 0));
+    }
+    // YYYYMMDD[HHmm[ss]]
+    if ((m = s.match(/^(\d{4})(\d{2})(\d{2})(?:[ T]?(\d{2}):?(\d{2})(?::?(\d{2}))?)?$/))) return mk(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    // 2026年4月1日 [8:00]
+    if ((m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?(?:\s*(\d{1,2}):(\d{2}))?/))) return mk(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0));
+    return null;
   };
 
   App.stats = (arr) => {
