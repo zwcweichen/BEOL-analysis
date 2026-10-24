@@ -383,7 +383,7 @@ code { background: var(--soft); padding: 0 4px; border-radius: 4px; font-family:
 .mech .sep{margin:0 6px;color:#c4c9d1}
 .ck-plots{display:grid;grid-template-columns:1fr 1fr;gap:10px;height:calc(100% - 92px)}
 .ck-plots>div{display:flex;flex-direction:column;min-height:0}.ck-plots .plot{flex:1;min-height:260px}
-.fwin:not(.max) .ck-plots{grid-template-columns:1fr;height:auto}.fwin:not(.max) .ck-plots .plot{flex:none;height:330px}
+.fwin:not(.max) .ck-plots{grid-template-columns:1fr;height:auto}.fwin:not(.max) .ck-plots .plot{flex:none;height:330px}.fwin:not(.max) .ck-plots #ckTrend{height:430px}
 .fwin.max .ck-plots{grid-template-columns:3fr 2fr}
 /* v3.1: trend x-axis control inside windows + condition chips in check window */
 .ck-x { padding: 0 0 4px; font-size: 12px; } .ck-x select, .tw-ctrl select[data-xby] { font-size: 12px; max-width: 180px; }
@@ -401,6 +401,18 @@ code { background: var(--soft); padding: 0 4px; border-radius: 4px; font-family:
 .prep-out .pl .pi span { font-size: 12px; color: var(--muted); } .prep-out .pl .pi.on { background: #eef1f4; } .prep-out .pl .pi:hover { background: #f3f5f7; }
 .prep-out .pr .plot { height: 320px; } .prep-out table tr.ex td { color: #98a2b3; }
 #prepTbl { max-height: 300px; display: block; overflow: auto; }
+/* v3.4: condition chips (drag = layer order, dot = colour, legend click = highlight) */
+.cchips { display: inline-flex; gap: 6px; align-items: center; margin-right: 6px; }
+.cchip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 6px; border: 1px solid var(--line); border-radius: 14px; background: #fff; cursor: grab; user-select: none; font-size: 12.5px; }
+.cchip .dot { width: 12px; height: 12px; cursor: pointer; margin: 0; outline: 1.5px solid #fff; box-shadow: 0 0 0 1px #c9d0d8; }
+.cchip.drag { opacity: .4; } .cchip.over { border-color: var(--navy, #142238); box-shadow: inset 3px 0 0 var(--navy, #142238); }
+.cchip.hi { border-color: var(--navy, #142238); font-weight: 700; }
+.cpop { position: absolute; z-index: 9999; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 10px 12px; width: 270px; }
+.cpop .cp-h { font-weight: 700; margin-bottom: 8px; font-size: 13px; }
+.cpop .cp-sw { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; margin-bottom: 10px; }
+.cpop .sw { display: block; height: 24px; border-radius: 5px; cursor: pointer; border: 2px solid transparent; } .cpop .sw.on { border-color: #142238; }
+.cpop .cp-row { display: flex; gap: 6px; align-items: center; } .cpop .cp-hex { width: 84px; font-family: var(--mono, monospace); font-size: 12.5px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; }
+.cpop label.btn { position: relative; overflow: hidden; } .cpop label.btn input { position: absolute; inset: 0; opacity: 0; }
 
 </style>
 <style>
@@ -1638,7 +1650,7 @@ window.App.XLAYER = [
     const isWiw = which === 'wiw', ratio = isWiw ? cell.wiwRatio : cell.sdRatio;
     const thk = cell.item.cat === 'thk';
     return {
-      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${isWiw ? '片內 σ' : 'wafer 間 σ'} ×${ratio.toFixed(2)}`,
+      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${isWiw ? '片內 σ' : 'wafer 間 σ'} ×${ratio.toFixed(1)}`,
       mean: isWiw ? '片內均勻性變差' : 'wafer 間變異放大',
       cat: R.byId(cell.item.cat).label,
       causes: isWiw
@@ -1750,7 +1762,7 @@ window.App.XLAYER = [
     if (rel.r != null && Math.abs(rel.r) < 0.3) return 'weak';
     return 'strong';
   };
-  R.fmtK = (k) => (Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`);
+  R.fmtK = (k) => (Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(1)}σ`);
   R.fmtR = (r) => (r == null ? '' : `r = ${r >= 0 ? '' : '−'}${Math.abs(r).toFixed(2)}`);
   /** "V12 CD AEI −2.79σ（r = −0.84）" */
   // v3.0: r is used for the judgement but not shown（戰報只呈現偏移量與有無對上）；pass withR = true only in the check window
@@ -1814,7 +1826,7 @@ window.App.XLAYER = [
   E.cat = (v) => (v == null ? '(空白)' : v instanceof Date ? App.fmtDate(v) : typeof v === 'number' ? App.fmtNum(v) : String(v));
   E.natCmp = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
-  const fmtK = (k) => (k == null || !isFinite(k) ? '—' : Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`);
+  const fmtK = (k) => (k == null || !isFinite(k) ? '—' : Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(1)}σ`);
   const pct = (x) => (x == null ? '—' : `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`);
   E.fmtK = fmtK; E.pct = pct;
   const median = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -1997,7 +2009,7 @@ window.App.XLAYER = [
               cell.fold = mc / mb; cell.reason = '';
               cell.dir = Math.sign(Math.log(cell.fold));
               cell.level = lv(Math.max(cell.fold, 1 / cell.fold), th.fG, th.fO);
-              cell.text = `×${cell.fold >= 10 ? cell.fold.toFixed(1) : cell.fold.toFixed(2)}`;
+              cell.text = `×${cell.fold.toFixed(1)}`;
             } else { cell.level = 'na'; cell.reason = reason || '無正值資料'; }
           } else if (it.metric === 'rate') {
             const tol = Math.max(1e-6, Math.abs(it.target) * 0.005);
@@ -2062,7 +2074,7 @@ window.App.XLAYER = [
       findings.inline = [...byCell.values()].map((arr) => {
         if (arr.length < 2) return arr[0];
         const m = arr.find((f) => f.type === 'mean'), v = arr.find((f) => f.type === 'var');
-        const vt = `${v.which === 'wiw' ? '片內 σ' : 'wafer 間 σ'} ×${(v.which === 'wiw' ? v.cell.wiwRatio : v.cell.sdRatio).toFixed(2)}`;
+        const vt = `${v.which === 'wiw' ? '片內 σ' : 'wafer 間 σ'} ×${(v.which === 'wiw' ? v.cell.wiwRatio : v.cell.sdRatio).toFixed(1)}`;
         return { ...m, varOf: v, varLevel: v.varLevel, which: v.which, score: m.score + v.score,
           dx: { ...m.dx, title: `${m.dx.title}，${vt}`, verdict: `${m.dx.verdict}${v.dx.verdict ? ` ${v.dx.verdict}` : ''}`, checks: [...new Set([...(m.dx.checks || []), ...(v.dx.checks || [])])], causes: [...new Set([...(m.dx.causes || []), ...(v.dx.causes || [])])] } };
       });
@@ -2408,7 +2420,7 @@ window.App.XLAYER = [
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
     hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' } });
-  App.VERSION = '3.3';
+  App.VERSION = '3.5';
   /** 知識庫建議開關（預設關）：關 = 建議檢查只列資料能互相對照的 item（同層／鄰層 inline、WAT、yield、機台），不給物理原因；開 = 加上知識庫的檢查與機制 */
   S.kbOn = !!App.store.get('rpt-kb-on', false);
   const $ = (id) => document.getElementById(id);
@@ -2420,15 +2432,32 @@ window.App.XLAYER = [
   const unit = (n) => RU.parseName(n).unit;
   const fmtK = E.fmtK, pct = E.pct;
   const f4 = (v) => (typeof v === 'number' && isFinite(v) ? (Math.abs(v) < 1e-3 && v !== 0 ? v.toExponential(3) : String(+v.toPrecision(4))) : '—');
-  const cipColor = (c) => CIPC[Math.max(0, S.cfg.cips.indexOf(c)) % CIPC.length];
+  // ---- v3.4 condition style: draw order (first = top layer), colours, highlight — one global setting, every chart follows
+  const VIS_KEY = 'rpt-vis';
+  const defColor = (c) => (c === S.cfg.baseline ? BSLC : CIPC[Math.max(0, S.cfg.cips.indexOf(c)) % CIPC.length]);
+  const condColor = (c) => (S.vis && S.vis.colors[c]) || defColor(c);
+  const cipColor = condColor;
+  /** (re)build S.vis from cfg: saved colours / order by condition name; default order = CIPs in cfg order, BSL at the bottom */
+  function visInit() {
+    const saved = App.store.get(VIS_KEY, { colors: {}, order: [] }) || { colors: {}, order: [] };
+    const conds = [...S.cfg.cips, S.cfg.baseline];
+    const order = [...(saved.order || []).filter((x) => conds.includes(x)), ...conds.filter((x) => !(saved.order || []).includes(x))];
+    S.vis = { order, colors: Object.fromEntries(conds.filter((x) => saved.colors && saved.colors[x]).map((x) => [x, saved.colors[x]])), hi: new Set() };
+  }
+  const visSave = () => { const old = App.store.get(VIS_KEY, { colors: {}, order: [] }) || { colors: {}, order: [] }; App.store.set(VIS_KEY, { colors: { ...(old.colors || {}), ...S.vis.colors }, order: S.vis.order }); };
+  const visRank = (c) => { const i = S.vis ? S.vis.order.indexOf(c) : -1; return i < 0 ? 999 : i; };
+  /** tag a trace with its condition so live restyle / reorder can find it; legendrank keeps the legend in layer order */
+  const tag = (tr, cond, role) => { tr.meta = { ...(tr.meta || {}), cond, role }; if (tr.showlegend !== false) tr.legendrank = 1000 + visRank(cond); return tr; };
+  /** order traces for drawing: untagged (bands, reference lines) first, then conditions from bottom layer to top layer */
+  const orderTraces = (data) => data.map((t, i) => ({ t, i, r: t.meta && t.meta.cond ? -visRank(t.meta.cond) : -1e6 })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.t);
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
   const LVZH = { green: '綠', yellow: '黃', orange: '橘', na: '—' };
   const isAbnL = (l) => l === 'yellow' || l === 'orange';
   /** the one number shown in a light: K (σ), fold (×) or fail-rate difference (%pt) */
-  const shiftTxt = (x) => (x.level === 'na' ? '—' : x.metric === 'fold' ? `×${x.fold.toFixed(2)}` : x.metric === 'rate' ? `${x.diff >= 0 ? '+' : '−'}${Math.abs(x.diff).toFixed(1)}%pt` : fmtK(x.k));
+  const shiftTxt = (x) => (x.level === 'na' ? '—' : x.metric === 'fold' ? `×${x.fold.toFixed(1)}` : x.metric === 'rate' ? `${x.diff >= 0 ? '+' : '−'}${Math.abs(x.diff).toFixed(1)}%pt` : fmtK(x.k));
   const itemOf = (name) => S.cfg.items.find((i) => i.name === name);
   const allFindings = () => E.KINDS.flatMap((k) => S.res.findings[k]);
-  const varTxt = (f) => `${f.which === 'wiw' ? '片內' : 'W2W'} σ ×${(f.which === 'wiw' ? f.cell.wiwRatio : f.cell.sdRatio).toFixed(2)}`;
+  const varTxt = (f) => `${f.which === 'wiw' ? '片內' : 'W2W'} σ ×${(f.which === 'wiw' ? f.cell.wiwRatio : f.cell.sdRatio).toFixed(1)}`;
   const fTxt = (f) => (f.type === 'var' ? varTxt(f) : f.varOf ? `${shiftTxt(f.cell)}，${varTxt(f.varOf)}` : shiftTxt(f.cell));
   /** "Rc_V12 @ TMTQ11：FAB15 Via 導通變差（K +2.33σ）" → "FAB15 Via 導通變差" */
   const multiCip = (c) => c.cips.length > 1;
@@ -2635,7 +2664,7 @@ window.App.XLAYER = [
     const flag = new Map(o.rows.map((r) => [r.wafer, r]));
     const pts = ord.map((r, i) => ({ i, w: r[c.waferCol], g: c.groupCol ? E.cat(r[c.groupCol]) : '全部', cd: E.cat(r[c.condCol]), v: r[cur] }));
     const data = [];
-    for (const cd of [c.baseline, ...c.cips]) { const a = pts.filter((q) => q.cd === cd && !flag.has(q.w)); if (a.length) data.push({ type: a.length > 3000 ? 'scattergl' : 'scatter', mode: 'markers', name: cd, x: a.map((q) => q.i), y: a.map((q) => q.v), text: a.map((q) => q.w), customdata: a.map((q) => [q.w, q.g, q.cd, q.v]), marker: { color: cd === c.baseline ? BSLC : cipColor(cd), size: 5, opacity: 0.55 }, hovertemplate: '%{text}<br>%{y}<extra>' + esc(cd) + '</extra>' }); }
+    for (const cd of [c.baseline, ...c.cips]) { const a = pts.filter((q) => q.cd === cd && !flag.has(q.w)); if (a.length) data.push({ type: a.length > 3000 ? 'scattergl' : 'scatter', mode: 'markers', name: cd, x: a.map((q) => q.i), y: a.map((q) => q.v), text: a.map((q) => q.w), customdata: a.map((q) => [q.w, q.g, q.cd, q.v]), marker: { color: condColor(cd), size: 5, opacity: 0.55 }, hovertemplate: '%{text}<br>%{y}<extra>' + esc(cd) + '</extra>', meta: { cond: cd, role: 'pts' } }); }
     const fl = pts.filter((q) => flag.has(q.w) && !flag.get(q.w).excluded), ex = pts.filter((q) => flag.has(q.w) && flag.get(q.w).excluded);
     if (fl.length) data.push({ type: 'scatter', mode: 'markers', name: '極端值（待確認）', x: fl.map((q) => q.i), y: fl.map((q) => q.v), text: fl.map((q) => q.w), customdata: fl.map((q) => [q.w, q.g, q.cd, q.v]), marker: { color: 'rgba(0,0,0,0)', size: 11, line: { color: '#c2410c', width: 2 } }, hovertemplate: '%{text}<br>%{y}<extra>極端值</extra>' });
     if (ex.length) data.push({ type: 'scatter', mode: 'markers', name: '已移除', x: ex.map((q) => q.i), y: ex.map((q) => q.v), text: ex.map((q) => q.w), marker: { color: '#98a2b3', size: 8, symbol: 'x' }, hovertemplate: '%{text}<br>%{y}<extra>已移除</extra>' });
@@ -2661,6 +2690,7 @@ window.App.XLAYER = [
     const m = validMsg(); if (m) { App.toast(m, 'err'); renderSetup(); showTab('setup'); return; }
     const t0 = performance.now();
     if (!hasKind(S.mode)) S.mode = E.KINDS.find(hasKind) || 'wat';
+    visInit();
     applyPrep();
     S.res = E.compute(S.ds, S.cfg, S.grain === 'wafer' ? S.siteDs : []);
     S.dirty = { report: true, trend: true, corr: true };
@@ -2685,9 +2715,10 @@ window.App.XLAYER = [
       : S.mode === 'inline' ? `<span class="kset">｜ K <span class="pill green">綠</span> ≤ ${inp('kG')} σ <span class="pill orange">橘</span> > ${inp('kO')} σ</span>
          <span class="kset">｜ 變異 σ 倍數 <span class="pill green">綠</span> ≤ ×${inp('sG')} <span class="pill orange">橘</span> > ×${inp('sO')}</span>`
       : `<span class="kset">｜ K <span class="pill green">綠</span> ≤ ${inp('kG')} σ <span class="pill orange">橘</span> > ${inp('kO')} σ</span><span class="muted">｜ yield 以 wafer 為單位，低於 BSL 為壞</span>`;
-    $('legendBar').innerHTML = `<b style="color:var(--ink)">Condition：</b>
-      <span><i class="dot" style="background:${BSLC}"></i>BSL（${esc(c.baseline)}）</span>
-      ${c.cips.map((p) => `<span><i class="dot" style="background:${cipColor(p)}"></i>CIP（${esc(p)}）</span>`).join('')}
+    if (!S.vis) visInit();
+    // condition chips in layer order (left = top layer); drag to reorder, click the dot to recolour, click a chart legend to highlight
+    const chip = (p) => `<span class="cchip ${S.vis.hi.has(p) ? 'hi' : ''}" draggable="true" data-cond="${esc(p)}" title="拖曳改圖層順序（越左越上層）；點色點換顏色"><i class="dot" data-conddot="${esc(p)}" style="background:${condColor(p)}"></i>${p === c.baseline ? 'BSL' : 'CIP'}（${esc(p)}）</span>`;
+    $('legendBar').innerHTML = `<b style="color:var(--ink)">Condition：</b><span class="cchips" id="cchips">${S.vis.order.map(chip).join('')}</span>
       ${rows}
       <label class="kbsw" title="開：建議檢查加入知識庫的檢查項目與物理機制；關：只列資料能互相對照的 item 與機台"><input type="checkbox" id="kbOn" ${S.kbOn ? 'checked' : ''}> 知識庫建議</label>`;
     const upd = () => {
@@ -2699,6 +2730,36 @@ window.App.XLAYER = [
     };
     $('legendBar').querySelectorAll('[data-th]').forEach((x) => x.addEventListener('change', upd));
     const kb = $('kbOn'); if (kb) kb.onchange = () => { S.kbOn = kb.checked; App.store.set('rpt-kb-on', S.kbOn); if (S.res) { S.dirty.report = true; renderReport(); } };
+    bindCondChips();
+  }
+  // ---- v3.4 condition chips: HTML5 drag-and-drop reorder (applies on drop), colour popover (swatches / hex / native picker)
+  const SWATCH = ['#1f3fbf', '#e8590c', '#0f9d8a', '#b5179e', '#6741d9', '#c00000', '#2e7d32', '#b8860b', '#0077b6', '#7b8694', '#000000'];
+  function bindCondChips() {
+    const host = $('cchips'); if (!host) return;
+    let drag = null;
+    host.querySelectorAll('.cchip').forEach((el) => {
+      el.addEventListener('dragstart', (e) => { drag = el.dataset.cond; el.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', drag); } catch (x) {} });
+      el.addEventListener('dragend', () => { el.classList.remove('drag'); host.querySelectorAll('.cchip').forEach((x) => x.classList.remove('over')); });
+      el.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (el.dataset.cond !== drag) el.classList.add('over'); });
+      el.addEventListener('dragleave', () => el.classList.remove('over'));
+      el.addEventListener('drop', (e) => { e.preventDefault(); const to = el.dataset.cond; if (!drag || drag === to) return; const o = S.vis.order.filter((x) => x !== drag); o.splice(o.indexOf(to), 0, drag); S.vis.order = o; visSave(); renderLegend(); applyVis(); });
+      el.querySelector('.dot').addEventListener('click', (e) => { e.stopPropagation(); openColorPop(el.dataset.cond, el); });
+    });
+  }
+  function openColorPop(cond, anchor) {
+    document.querySelectorAll('.cpop').forEach((x) => x.remove());
+    const pop = document.createElement('div'); pop.className = 'cpop';
+    const cur = condColor(cond);
+    pop.innerHTML = `<div class="cp-h">${esc(cond)}</div><div class="cp-sw">${SWATCH.map((h) => `<span class="sw ${h === cur ? 'on' : ''}" data-h="${h}" style="background:${h}"></span>`).join('')}</div>
+      <div class="cp-row"><input class="cp-hex" value="${esc(cur)}" maxlength="7" spellcheck="false"><label class="btn sm">自訂…<input type="color" class="cp-pick" value="${esc(cur)}"></label><button class="btn sm" data-reset>預設</button></div>`;
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect(); pop.style.left = `${Math.min(innerWidth - 300, r.left)}px`; pop.style.top = `${r.bottom + 6 + scrollY}px`;
+    const set = (h, close) => { if (!/^#[0-9a-f]{6}$/i.test(h)) return; S.vis.colors[cond] = h.toLowerCase(); visSave(); applyVis(); pop.querySelectorAll('.sw').forEach((x) => x.classList.toggle('on', x.dataset.h === h.toLowerCase())); pop.querySelector('.cp-hex').value = h.toLowerCase(); pop.querySelector('.cp-pick').value = h.toLowerCase(); if (close) pop.remove(); };
+    pop.querySelectorAll('.sw').forEach((x) => (x.onclick = () => set(x.dataset.h, true)));
+    pop.querySelector('.cp-hex').addEventListener('change', (e) => set(e.target.value.trim().startsWith('#') ? e.target.value.trim() : '#' + e.target.value.trim(), false));
+    pop.querySelector('.cp-pick').addEventListener('input', (e) => set(e.target.value, false));
+    pop.querySelector('[data-reset]').onclick = () => { delete S.vis.colors[cond]; visSave(); applyVis(); pop.remove(); };
+    setTimeout(() => document.addEventListener('mousedown', function h(e) { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', h); } }), 0);
   }
 
   // ================================================================ setup
@@ -2856,7 +2917,7 @@ window.App.XLAYER = [
           if (view === 'var') {
             const part = (lab, v, lv) => (v == null ? '' : `<span class="vv ${lv}">${heat ? '' : `${lab} `}×${v.toFixed(heat ? 1 : 2)}</span>`);
             const b = heat ? (isAbnL(l) ? part('', Math.max(x.sdRatio || 0, x.wiwRatio || 0), l) : '') : part('W2W', x.sdRatio, x.sdLevel) + part('WIW', x.wiwRatio, x.wiwLevel);
-            body += `<td class="lc var ${l}" ${at} title="${esc(`W2W ×${x.sdRatio?.toFixed(2) ?? '—'}　WIW ×${x.wiwRatio?.toFixed(2) ?? '—'}（CIP ÷ BSL）`)}">${b || (heat ? '' : '—')}</td>`;
+            body += `<td class="lc var ${l}" ${at} title="${esc(`W2W ×${x.sdRatio?.toFixed(1) ?? '—'}　WIW ×${x.wiwRatio?.toFixed(1) ?? '—'}（CIP ÷ BSL）`)}">${b || (heat ? '' : '—')}</td>`;
           } else body += `<td class="lc ${l}" ${at} title="${esc(`${shiftTxt(x)}　${cellTip(it, p, x)}`)}">${heat ? (isAbnL(l) || l === 'na' ? esc(heatTxt(x)) : '') : esc(shiftTxt(x))}</td>`;
         }
         body += '</tr>';
@@ -2946,22 +3007,23 @@ window.App.XLAYER = [
       shapes.push({ type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: bm - bs, y1: bm + bs, fillcolor: '#dde3ea', opacity: 0.7, line: { width: 0 }, layer: 'below' });
       shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: bm, y1: bm, line: { color: '#6b7684', width: 1.2, dash: 'dash' } });
     }
-    const big = opts.big, mini = opts.mini;
+    const big = opts.big, mini = opts.mini, many = opts.compact && c.cips.length > 3;   // many conditions on a small chart → short legend names
     const bShow = sample(bsl, mini ? 700 : 1500);
-    data.push({ type: 'scatter', mode: 'markers', name: `BSL ${c.baseline}（N ${bsl.length}）${it.metric === 'rate' && c0 ? `  異常 ${pct(c0.rateB)}` : ''}`, x: bShow.map((p) => p.x), y: bShow.map((p) => p.y), text: bShow.map((p) => p.w),
-      marker: { color: bShow.map((p) => (isFail(p.y) ? '#4b5563' : BSLC)), size: big ? 6 : mini ? 3.5 : 4.5, opacity: 0.75 }, hovertemplate: '%{text}<br>%{y}<extra>BSL</extra>' });
+    const bFail = bShow.map((p) => isFail(p.y));
+    data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `BSL ${c.baseline}` : `BSL ${c.baseline}（N ${bsl.length}）${it.metric === 'rate' && c0 ? `  異常 ${pct(c0.rateB)}` : ''}`, x: bShow.map((p) => p.x), y: bShow.map((p) => p.y), text: bShow.map((p) => p.w),
+      marker: { color: bFail.some(Boolean) ? bFail.map((f) => (f ? '#4b5563' : condColor(c.baseline))) : condColor(c.baseline), size: big ? 6 : mini ? 3.5 : 4.5, opacity: 0.75 }, hovertemplate: '%{text}<br>%{y}<extra>BSL</extra>', meta: bFail.some(Boolean) ? { fail: bFail } : {} }, c.baseline, 'pts'));
     for (const p of c.cips) {
       const cp = pts.filter((q) => q.c === p);
       if (!cp.length) continue;
       const cell = r.cells[itemName]?.[group]?.[p];
       const lab = !cell || cell.level === 'na' ? '' : `  ${shiftTxt(cell)}`;
-      data.push({ type: 'scatter', mode: 'markers', name: `CIP ${p}${lab}（N ${cp.length}）`, x: cp.map((q) => q.x), y: cp.map((q) => q.y), text: cp.map((q) => q.w),
-        marker: { color: cipColor(p), size: cp.map((q) => (isFail(q.y) ? (big ? 11 : 8.5) : big ? 8 : mini ? 5 : 7)), symbol: cp.map((q) => (isFail(q.y) ? 'diamond' : 'circle')),
+      data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `${p}${lab}` : `CIP ${p}${lab}（N ${cp.length}）`, x: cp.map((q) => q.x), y: cp.map((q) => q.y), text: cp.map((q) => q.w),
+        marker: { color: condColor(p), size: cp.map((q) => (isFail(q.y) ? (big ? 11 : 8.5) : big ? 8 : mini ? 5 : 7)), symbol: cp.map((q) => (isFail(q.y) ? 'diamond' : 'circle')),
           line: { width: cp.map((q) => (isFail(q.y) ? 1.4 : 0.8)), color: cp.map((q) => (isFail(q.y) ? '#c2410c' : '#fff')) } },
-        hovertemplate: `%{text}<br>%{y}<extra>${esc(p)}</extra>` });
+        hovertemplate: `%{text}<br>%{y}<extra>${esc(p)}</extra>` }, p, 'pts'));
       const cx = cp.map((q) => q.x).filter((v) => v != null), x0 = useDate ? new Date(Math.min(...cx)) : Math.min(...cx), x1 = useDate ? new Date(Math.max(...cx)) : Math.max(...cx);
       const ref = it.metric === 'fold' ? cell?.median : it.metric === 'rate' ? null : cell?.mean;
-      if (ref != null) data.push(hline(x0, x1, ref, cipColor(p), 'solid', mini ? 1.8 : 2.2));
+      if (ref != null) data.push(tag(hline(x0, x1, ref, condColor(p), 'solid', mini ? 1.8 : 2.2), p, 'line'));
     }
     const L = baseLayout(h);
     L.shapes = shapes;
@@ -2969,10 +3031,10 @@ window.App.XLAYER = [
     L.xaxis.title = { text: tx.title, font: { size: 10.5, color: '#667085' } };
     L.yaxis.title = axTitle(itemName, isLog(itemName) ? '，log' : '');
     if (isLog(itemName)) L.yaxis.type = 'log';
-    if (opts.compact) { L.showlegend = true; L.legend = { orientation: 'h', x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', font: { size: 11 } }; L.margin = { l: 46, r: 8, t: 26, b: 34 }; }
+    if (opts.compact) { L.showlegend = true; L.legend = { orientation: 'h', x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', font: { size: many ? 10 : 11 }, itemwidth: 30 }; L.margin = { l: 46, r: 8, t: many ? 46 : 26, b: 34 }; }
     if (mini) { L.showlegend = false; L.margin = { l: 46, r: 8, t: 8, b: 34 }; }
     if (mini) { L.xaxis.title = null; L.yaxis.title = null; L.margin = { l: 42, r: 6, t: 6, b: 24 }; L.xaxis.tickfont.size = 9; L.yaxis.tickfont.size = 9; L.xaxis.nticks = 4; L.yaxis.nticks = 5; }
-    return { data, layout: L };
+    return { data: orderTraces(data), layout: L };
   }
 
   function waferInfo() {
@@ -3008,20 +3070,20 @@ window.App.XLAYER = [
     const data = [];
     conds.forEach((cd, i) => {
       const a = acc.get(cd); if (!a.length) return;
-      const col = cd === c.baseline ? BSLC : cipColor(cd), off = (i - (conds.length - 1) / 2) * 2.2;
+      const col = condColor(cd), off = (i - (conds.length - 1) / 2) * 2.2;
       const sh = cd === c.baseline ? sample(a, 2500) : a;
-      data.push({ type: 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd}`, showlegend: false, x: sh.map((p) => p.R + off), y: sh.map((p) => p.v), text: sh.map((p) => p.w),
-        marker: { color: col, size: cd === c.baseline ? 3.5 : 5, opacity: cd === c.baseline ? 0.45 : 0.75 }, hovertemplate: `%{text}<br>R %{x:.0f} mm<br>%{y}<extra>${esc(cd)}</extra>` });
+      data.push(tag({ type: 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd}`, showlegend: false, x: sh.map((p) => p.R + off), y: sh.map((p) => p.v), text: sh.map((p) => p.w),
+        marker: { color: col, size: cd === c.baseline ? 3.5 : 5, opacity: cd === c.baseline ? 0.45 : 0.75 }, hovertemplate: `%{text}<br>R %{x:.0f} mm<br>%{y}<extra>${esc(cd)}</extra>` }, cd, 'pts'));
       const byR = new Map(); a.forEach((p) => { if (!byR.has(p.R)) byR.set(p.R, []); byR.get(p.R).push(p.v); });
       const rs = [...byR.keys()].sort((x, y) => x - y);
-      data.push({ type: 'scatter', mode: 'lines+markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd} mean`, x: rs.map((x) => x + off), y: rs.map((x) => App.stats(byR.get(x)).mean),
-        line: { color: cd === c.baseline ? '#5b6573' : col, width: 2.4 }, marker: { size: 7, color: cd === c.baseline ? '#5b6573' : col } });
+      data.push(tag({ type: 'scatter', mode: 'lines+markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd} mean`, x: rs.map((x) => x + off), y: rs.map((x) => App.stats(byR.get(x)).mean),
+        line: { color: col, width: 2.4 }, marker: { size: 7, color: col } }, cd, 'line'));
     });
     const L = baseLayout(h);
     L.xaxis.title = { text: '半徑 R (mm)，0 = center', font: { size: 10.5, color: '#667085' } };
     L.yaxis.title = axTitle(itemName);
     if (opts.compact) { L.showlegend = false; L.margin = { l: 46, r: 8, t: 8, b: 34 }; }
-    return { data, layout: L };
+    return { data: orderTraces(data), layout: L };
   }
 
   /** Correlation scatter coloured by condition, with per-condition fit (log-y fit for fold items) */
@@ -3034,16 +3096,16 @@ window.App.XLAYER = [
     for (const cd of conds) {
       const rr = rows.filter((x) => r.cOf(x) === cd);
       if (!rr.length) continue;
-      const col = cd === c.baseline ? BSLC : cipColor(cd);
+      const col = condColor(cd);
       const shown = cd === c.baseline ? sample(rr, 4000) : rr;
-      data.push({ type: shown.length > 3000 ? 'scattergl' : 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd}`, x: shown.map((x) => x[xName]), y: shown.map((x) => x[yName]),
+      data.push(tag({ type: shown.length > 3000 ? 'scattergl' : 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd}`, x: shown.map((x) => x[xName]), y: shown.map((x) => x[yName]),
         text: shown.map((x) => x[c.waferCol]), marker: { color: col, size: cd === c.baseline ? 5 : 8, opacity: cd === c.baseline ? 0.55 : 0.9, line: { width: cd === c.baseline ? 0 : 0.8, color: '#fff' } },
-        hovertemplate: '%{text}<br>x %{x}<br>y %{y}<extra></extra>' });
+        hovertemplate: '%{text}<br>x %{x}<br>y %{y}<extra></extra>' }, cd, 'pts'));
       const f = App.statsLib.linreg(rr.map((x) => tx(x[xName])), rr.map((x) => ty(x[yName])));
       stats.push({ cond: cd, ...f });
       if (f.b != null) {
         const xx = Array.from({ length: 12 }, (_, i) => f.xmin + ((f.xmax - f.xmin) * i) / 11);
-        data.push({ type: 'scatter', mode: 'lines', x: xx.map(ux), y: xx.map((v) => uy(f.predict(v))), line: { color: cd === c.baseline ? '#5b6573' : col, width: 2 }, showlegend: false, hoverinfo: 'skip' });
+        data.push(tag({ type: 'scatter', mode: 'lines', x: xx.map(ux), y: xx.map((v) => uy(f.predict(v))), line: { color: col, width: 2 }, showlegend: false, hoverinfo: 'skip' }, cd, 'line'));
       }
     }
     const all = App.statsLib.linreg(rows.map((x) => tx(x[xName])), rows.map((x) => ty(x[yName])));
@@ -3053,10 +3115,48 @@ window.App.XLAYER = [
     if (lx) L.xaxis.type = 'log';
     if (ly) L.yaxis.type = 'log';
     if (compact) L.margin = { l: 46, r: 8, t: 22, b: 36 };
-    return { data, layout: L, stats, n: rows.length, logNote: ly || lx };
+    return { data: orderTraces(data), layout: L, stats, n: rows.length, logNote: ly || lx };
   }
   /** small charts are static (light, click → floating window); big ones interactive */
-  function plotInto(div, fig, stat) { if (fig) Plotly.newPlot(div, fig.data, fig.layout, stat ? { staticPlot: true, responsive: true } : CFG); }
+  function plotInto(div, fig, stat) { if (fig) Plotly.newPlot(div, fig.data, fig.layout, stat ? { staticPlot: true, responsive: true } : CFG).then((gd) => bindHi(gd)); }
+  // ---- v3.4 live condition style: highlight on legend click, restyle colours / reorder layers on every chart currently in the page
+  const HI_DIM = 0.12;
+  /** legend click = highlight that condition (click again = back); double-click = clear all. Hiding traces is gone. */
+  function bindHi(gd) {
+    if (!gd || gd._hiBound || !gd.on) return; gd._hiBound = true;
+    gd.on('plotly_legendclick', (ev) => { const tr = ev.data[ev.curveNumber], cd = tr && tr.meta && tr.meta.cond; if (!cd) return false; if (S.vis.hi.has(cd)) S.vis.hi.delete(cd); else S.vis.hi.add(cd); applyVis(); return false; });
+    gd.on('plotly_legenddoubleclick', () => { S.vis.hi.clear(); applyVis(); return false; });
+  }
+  const allPlots = () => [...document.querySelectorAll('.js-plotly-plot')].filter((g) => g.data && g._fullLayout);
+  /** push S.vis (colours, order, highlight) onto every live chart: one Plotly.react per chart (no recompute); visible charts now, hidden tabs in idle batches */
+  function visData(gd) {
+    const hi = S.vis.hi, anyHi = hi.size > 0;
+    let touched = false;
+    for (const t of gd.data) {
+      const cd = t.meta && t.meta.cond; if (!cd) continue; touched = true;
+      const col = condColor(cd), role = t.meta.role;
+      if (t.marker) t.marker.color = t.meta.fail ? t.meta.fail.map((f) => (f ? '#4b5563' : col)) : col;
+      if (t.line) t.line.color = col;
+      if (role === 'box') t.fillcolor = col + '33';
+      t.opacity = anyHi && !hi.has(cd) ? HI_DIM : 1;
+      if (t.showlegend !== false) t.legendrank = 1000 + visRank(cd);
+    }
+    if (!touched) return null;
+    return gd.data.map((t, i) => ({ t, i, r: t.meta && t.meta.cond ? -visRank(t.meta.cond) + (hi.has(t.meta.cond) ? 1e4 : 0) : -1e6 })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.t);
+  }
+  function visApplyOne(gd) {
+    try { const data = visData(gd); if (!data) return; const cx = gd._context || {}; Plotly.react(gd, data, gd.layout, { displaylogo: false, responsive: true, staticPlot: !!cx.staticPlot, displayModeBar: cx.displayModeBar, modeBarButtonsToRemove: cx.modeBarButtonsToRemove || CFG.modeBarButtonsToRemove }).then(bindHi); } catch (e) { console.warn('applyVis', e); }
+  }
+  let visQueue = [], visTimer = 0;
+  function applyVis() {
+    const all = allPlots(), vis = all.filter((g) => g.offsetParent !== null), hid = all.filter((g) => g.offsetParent === null);
+    vis.forEach(visApplyOne);
+    visQueue = hid; clearTimeout(visTimer);
+    const step = () => { const batch = visQueue.splice(0, 4); batch.forEach(visApplyOne); if (visQueue.length) visTimer = setTimeout(step, 30); };
+    if (hid.length) visTimer = setTimeout(step, 30);
+    document.querySelectorAll('[data-conddot]').forEach((d) => (d.style.background = condColor(d.dataset.conddot)));
+    document.querySelectorAll('.cchip').forEach((d) => d.classList.toggle('hi', S.vis.hi.has(d.dataset.cond)));
+  }
   const fluid = (fig) => { if (fig) { delete fig.layout.height; fig.layout.autosize = true; } return fig; };
 
   // ================================================================ what to plot for a finding
@@ -3216,7 +3316,7 @@ ${linkChip()}</div>`;
       const w = f.which === 'wiw';
       return (w ? `片內 site σ 平均：${esc(c.cip)} <b>${f4(c.wiwC)}</b> vs BSL <b>${f4(c.wiwB)}</b> ${u}` : `wafer 間 σ：${esc(c.cip)} <b>${f4(c.sd)}</b> vs BSL <b>${f4(c.bsd)}</b> ${u}`) + `　均值 ${shiftTxt(c)}（${LVZH[c.level]}燈）· N ${c.n} / ${c.bn}`;
     }
-    if (c.metric === 'fold') return `${esc(c.cip)} median <b>${f4(c.median)}</b> vs BSL <b>${f4(c.bmedian)}</b> ${u}（${c.fold >= 1 ? `高 ${c.fold.toFixed(2)} 倍` : `低 ${(1 / c.fold).toFixed(2)} 倍`}）· N ${c.n} / ${c.bn}`;
+    if (c.metric === 'fold') return `${esc(c.cip)} median <b>${f4(c.median)}</b> vs BSL <b>${f4(c.bmedian)}</b> ${u}（${c.fold >= 1 ? `高 ${c.fold.toFixed(1)} 倍` : `低 ${(1 / c.fold).toFixed(1)} 倍`}）· N ${c.n} / ${c.bn}`;
     if (c.metric === 'rate') return `偏離固定值 ${f4(c.item.target)} ${u} 的比例：${esc(c.cip)} <b>${pct(c.rateC)}</b> vs BSL <b>${pct(c.rateB)}</b>（${c.diff >= 0 ? '+' : '−'}${Math.abs(c.diff).toFixed(1)}%pt）· N ${c.n} / ${c.bn}`;
     const p = c.bmean ? ((c.mean - c.bmean) / Math.abs(c.bmean)) * 100 : null;
     const vx = f.varOf ? `　${f.varOf.which === 'wiw' ? `片內 σ <b>${f4(c.wiwC)}</b> vs BSL <b>${f4(c.wiwB)}</b>` : `wafer 間 σ <b>${f4(c.sd)}</b> vs BSL <b>${f4(c.bsd)}</b>`}` : '';
@@ -3367,8 +3467,8 @@ ${linkChip()}</div>`;
         const col0 = cipColor(cip);
         // --- run-rate (% only, counts on hover)
         Plotly.newPlot(b.querySelector('#twRate'), [
-          { type: 'bar', name: `BSL ${c.baseline}`, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareB * 100), marker: { color: BSLC }, text: lvs.map((l) => `${Math.round(l.shareB * 100)}%`), textposition: 'outside', textfont: { size: 10 }, customdata: lvs.map((l) => l.nB), hovertemplate: '%{x}<br>%{y:.0f}%（%{customdata} 片）<extra>BSL</extra>' },
-          { type: 'bar', name: cip, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareC * 100), marker: { color: col0 }, text: lvs.map((l) => `${Math.round(l.shareC * 100)}%`), textposition: 'outside', textfont: { size: 10 }, customdata: lvs.map((l) => l.n), hovertemplate: `%{x}<br>%{y:.0f}%（%{customdata} 片）<extra>${esc(cip)}</extra>` },
+          { type: 'bar', name: `BSL ${c.baseline}`, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareB * 100), marker: { color: condColor(c.baseline) }, meta: { cond: c.baseline, role: 'bar' }, text: lvs.map((l) => `${Math.round(l.shareB * 100)}%`), textposition: 'outside', textfont: { size: 10 }, customdata: lvs.map((l) => l.nB), hovertemplate: '%{x}<br>%{y:.0f}%（%{customdata} 片）<extra>BSL</extra>' },
+          { type: 'bar', name: cip, x: lvs.map((l) => l.v), y: lvs.map((l) => l.shareC * 100), marker: { color: col0 }, meta: { cond: cip, role: 'bar' }, text: lvs.map((l) => `${Math.round(l.shareC * 100)}%`), textposition: 'outside', textfont: { size: 10 }, customdata: lvs.map((l) => l.n), hovertemplate: `%{x}<br>%{y:.0f}%（%{customdata} 片）<extra>${esc(cip)}</extra>` },
         ], { ...baseLayout(200), barmode: 'group', xaxis: { ...baseLayout(0).xaxis, categoryorder: 'array', categoryarray: lvs.map((l) => l.v) }, yaxis: { ...baseLayout(0).yaxis, title: { text: '% of wafer', font: { size: 10 } }, range: [0, 118], showgrid: false }, margin: { l: 40, r: 8, t: 8, b: 40 }, legend: { orientation: 'h', x: 0, y: 1.12, font: { size: 10 } } }, { ...CFG, displayModeBar: false });
         // --- weekly run-rate: stacked counts per level, all conditions in scope
         const wk = b.querySelector('#twWeek');
@@ -3390,10 +3490,10 @@ ${linkChip()}</div>`;
         } else wk.innerHTML = '<div class="empty" style="padding:30px">沒有時間欄位，無法畫每週 run 貨</div>';
         // --- box plot with K annotations per level and n under the tick labels
         const traces = [];
-        for (const [cd, rr, colr] of [[c.baseline, bRows, BSLC], [cip, cRows, col0]]) {
-          const xs = [], ys = [];
+        for (const [cd, rr] of [[c.baseline, bRows], [cip, cRows]]) {
+          const xs = [], ys = [], colr = condColor(cd);
           rr.forEach((x) => { const k = keyFn(x); if (k != null) { xs.push(k); ys.push(x[item]); } });
-          traces.push({ type: 'box', name: cd === c.baseline ? `BSL ${cd}` : cd, x: xs, y: ys, marker: { color: colr, size: 3 }, line: { color: cd === c.baseline ? '#7a8594' : colr }, fillcolor: cd === c.baseline ? 'rgba(154,163,174,.25)' : colr + '33', boxpoints: 'all', jitter: 0.5, pointpos: 0, boxmean: true, hoverinfo: 'y+name' });
+          traces.push(tag({ type: 'box', name: cd === c.baseline ? `BSL ${cd}` : cd, x: xs, y: ys, marker: { color: colr, size: 3 }, line: { color: colr }, fillcolor: colr + '33', boxpoints: 'all', jitter: 0.5, pointpos: 0, boxmean: true, hoverinfo: 'y+name' }, cd, 'box'));
         }
         const L = baseLayout(420); L.boxmode = 'group'; L.xaxis.categoryorder = 'array'; L.xaxis.categoryarray = lvs.map((l) => l.v);
         L.xaxis.tickvals = lvs.map((l) => l.v); L.xaxis.ticktext = lvs.map((l) => `${l.v}<br><span style="font-size:10px;color:${l.n && l.n < 30 ? '#b0b7c3' : '#667085'}">n ${l.nB} / ${l.n}</span>`);
@@ -3404,7 +3504,7 @@ ${linkChip()}</div>`;
         L.annotations = lvs.filter((l) => l.k != null).map((l) => ({ x: l.v, y: isLog(item) ? Math.log10(top(l.v)) : top(l.v), xshift: 16, yshift: 6, yanchor: 'bottom', showarrow: false, text: `<b>${fmtK(l.k)}</b>`, font: { size: 11.5, color: LVC[lvOf(l.k)], family: 'Consolas, monospace' }, bgcolor: 'rgba(255,255,255,.9)', bordercolor: LVC[lvOf(l.k)], borderwidth: 1, borderpad: 2 }));
         if (cell.bmean != null && cell.bsd > 0 && !isLog(item)) L.shapes = [{ type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: cell.bmean - cell.bsd, y1: cell.bmean + cell.bsd, fillcolor: '#e9edf2', opacity: 0.6, line: { width: 0 }, layer: 'below' }, { type: 'line', xref: 'paper', x0: 0, x1: 1, y0: cell.bmean, y1: cell.bmean, line: { color: '#6b7684', width: 1.2, dash: 'dash' } }];
         delete L.height; L.autosize = true;
-        Plotly.newPlot(b.querySelector('#twBox'), traces, L, { ...CFG, displayModeBar: false });
+        Plotly.newPlot(b.querySelector('#twBox'), traces, L, { ...CFG, displayModeBar: false }).then(bindHi);
       };
       draw();
     }, { wide: true });
@@ -3630,7 +3730,7 @@ ${linkChip()}</div>`;
         const rowsG = st.group === '全部' ? S.ds.rows : S.res.byG.get(st.group) || [];
         const rows = rowsG.filter((q) => st.conds.has(S.res.cOf(q)));
         const hasX = st.x && cols.includes(st.x);
-        const allC = [S.cfg.baseline, ...S.cfg.cips];
+        const allC = (S.vis ? S.vis.order : [S.cfg.baseline, ...S.cfg.cips]).slice();
         // verdict
         let v = '', vk = '';
         if (!hasX) { v = `資料中沒有對應「${esc(text || '此檢查')}」的欄位。從右邊選一個欄位，或用「＋ 匯入資料補進」把 inline／機台／yield 檔以 wafer id 合併進來。`; vk = 'need'; }
@@ -3647,11 +3747,11 @@ ${linkChip()}</div>`;
         }
         b.innerHTML = `<div class="tw-ctrl"><span class="lab">Y</span><select data-ck="y">${opt(st.y)}</select><span class="lab">X</span><select data-ck="x">${opt(st.x)}</select>
             ${S.res.groups.length > 1 ? `<span class="lab">${esc(S.cfg.groupCol || '分組')}</span><select data-ck="g"><option value="全部" ${st.group === '全部' ? 'selected' : ''}>全部</option>${S.res.groups.filter((x) => x !== '全部').map((x) => `<option value="${esc(x)}" ${x === st.group ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>` : ''}
-            <span class="lab">條件</span><span class="chips">${allC.map((cd) => `<span class="chip ${st.conds.has(cd) ? 'on' : ''}" data-cond="${esc(cd)}"><i class="dot" style="background:${cd === S.cfg.baseline ? BSLC : cipColor(cd)}"></i>${esc(cd)}</span>`).join('')}</span>
+            <span class="lab">條件</span><span class="chips">${allC.map((cd) => `<span class="chip ${st.conds.has(cd) ? 'on' : ''}" data-cond="${esc(cd)}"><i class="dot" style="background:${condColor(cd)}"></i>${esc(cd)}</span>`).join('')}</span>
             <span class="spacer"></span><button class="btn sm" data-ck="imp" title="以 wafer id 自動合併；長表會先轉寬表">＋ 匯入資料補進</button></div>
           <div class="tw-v ${vk}">${v}</div>
           <div class="ck-plots"><div><div class="ft">相關</div><div class="plot" id="ckCorr"></div></div>
-          <div><div class="ft">共振 trend <span class="muted" style="font-weight:400">z 分數移動平均</span></div><div class="tw-ctrl ck-x">${trendXCtrl()}</div><div class="plot" id="ckTrend"></div></div></div>`;
+          <div><div class="ft">兩個 item 的 trend</div><div class="tw-ctrl ck-x">${trendXCtrl()}</div><div class="plot" id="ckTrend"></div></div></div>`;
         b.querySelector('[data-ck=y]').onchange = (e) => { st.y = e.target.value; draw(); };
         b.querySelector('[data-ck=x]').onchange = (e) => { st.x = e.target.value; draw(); };
         const gs = b.querySelector('[data-ck=g]'); if (gs) gs.onchange = (e) => { st.group = e.target.value; draw(); };
@@ -3659,30 +3759,35 @@ ${linkChip()}</div>`;
         bindTrendX(b, draw);
         b.querySelector('[data-ck=imp]').onclick = () => { S.reopenCheck = reopen; $('file2').click(); };
         if (!hasX) { b.querySelector('#ckCorr').innerHTML = '<div class="muted small" style="padding:30px;text-align:center">選擇 X 欄位後顯示散佈圖</div>'; b.querySelector('#ckTrend').innerHTML = ''; return; }
-        { const cf = fluid(b._cf); cf.layout.legend = { orientation: 'h', x: 0, y: 1.08, font: { size: 10.5 } }; Plotly.newPlot(b.querySelector('#ckCorr'), cf.data, cf.layout, { ...CFG, displayModeBar: false }); }
-        // resonance trend: z-scores vs BSL for both items, ordered by date (or row order), rolling mean
-        const c = S.cfg, bRows = rowsG.filter((q) => S.res.cOf(q) === c.baseline);   // z-scores always relative to BSL of the chosen group
-        const stat = (name) => { const a = bRows.map((q) => num(q[name])).filter((x) => x != null); const m = a.reduce((p, q) => p + q, 0) / (a.length || 1); const sd = Math.sqrt(a.reduce((p, q) => p + (q - m) ** 2, 0) / Math.max(1, a.length - 1)); return [m, sd]; };
-        const [my, sy] = stat(st.y), [mx, sx] = stat(st.x);
+        { const cf = fluid(b._cf); cf.layout.legend = { orientation: 'h', x: 0, y: 1.08, font: { size: 10.5 } }; Plotly.newPlot(b.querySelector('#ckCorr'), cf.data, cf.layout, { ...CFG, displayModeBar: false }).then(bindHi); }
+        // v3.5 paired trend: two stacked panels (Y item above, X item below) sharing the wafer axis, raw values, points by condition + rolling mean per item
+        const c = S.cfg;
         const ord = orderRows(rows.filter((q) => num(q[st.y]) != null && num(q[st.x]) != null)), tx = trendX(ord);
-        const zy = zSeries(ord, st.y, my, sy), zx = zSeries(ord, st.x, mx, sx);
-        const rel = [...(f.rel || []), ...(f.xrel || [])].find((q) => q.item.name === st.x);
-        const flip = rel && rel.sign ? rawSign(st.y, rel.sign) : 1;
-        const w = Math.max(7, Math.round(ord.length / 25)), roll = (a) => a.map((_, i) => { const seg = a.slice(Math.max(0, i - w + 1), i + 1).filter((x) => x != null); return seg.length ? seg.reduce((p, q) => p + q, 0) / seg.length : null; });
         const xs = tx.xs;
+        const w = Math.max(7, Math.round(ord.length / 25)), roll = (a) => a.map((_, i) => { const seg = a.slice(Math.max(0, i - w + 1), i + 1).filter((x) => x != null); return seg.length ? seg.reduce((p, q) => p + q, 0) / seg.length : null; });
         const cipIdx = ord.map((q, i) => (S.res.cOf(q) === cip ? i : -1)).filter((i) => i >= 0);
-        const L = baseLayout(300); L.yaxis.title = 'z（相對 BSL）'; L.xaxis.title = { text: tx.title, font: { size: 10.5, color: '#667085' } }; L.xaxis.type = tx.type; L.xaxis.zeroline = false; L.margin = { l: 50, r: 8, t: 10, b: 40 };
-        L.legend = { orientation: 'h', x: 0, y: 1.12, font: { size: 10.5 } };
-        L.shapes = [{ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 0, y1: 0, line: { color: '#9aa3ae', width: 1, dash: 'dash' } }];
-        // CIP period shading only when the CIP wafers form a distinct period (not interleaved with BSL through the whole range)
-        if (cipIdx.length && (cipIdx[cipIdx.length - 1] - cipIdx[0]) < 0.7 * ord.length) L.shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: xs[cipIdx[0]], x1: xs[cipIdx[cipIdx.length - 1]], y0: 0, y1: 1, fillcolor: cipColor(cip), opacity: 0.08, line: { width: 0 }, layer: 'below' });
-        const tr = [
-          { type: 'scatter', mode: 'markers', name: `${cip} wafer（Y）`, x: cipIdx.map((i) => xs[i]), y: cipIdx.map((i) => zy[i]), marker: { color: cipColor(cip), size: 5, opacity: 0.6 }, hoverinfo: 'skip' },
-          { type: 'scatter', mode: 'lines', name: `${short(st.y)}（Y）`, x: xs, y: roll(zy), line: { color: '#1F3B63', width: 2.2 } },
-          { type: 'scatter', mode: 'lines', name: `${short(st.x)}（X${flip < 0 ? '，取反向' : ''}）`, x: xs, y: roll(zx.map((z) => (z == null ? null : z * flip))), line: { color: '#d4580f', width: 2.2, dash: 'dot' } },
-        ];
+        const tr = [];
+        const panel = (name, ax) => {
+          const vals = ord.map((q) => (isLog(name) ? Math.log10(num(q[name])) : num(q[name])));
+          for (const cd of allC) {
+            if (!st.conds.has(cd)) continue;
+            const idx = ord.map((q, i) => (S.res.cOf(q) === cd ? i : -1)).filter((i) => i >= 0); if (!idx.length) continue;
+            tr.push(tag({ type: 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL ' : ''}${cd}`, legendgroup: cd, showlegend: ax === 'y', x: idx.map((i) => xs[i]), y: idx.map((i) => ord[i][name]), text: idx.map((i) => ord[i][c.waferCol]),
+              marker: { color: condColor(cd), size: cd === c.baseline ? 4 : 6, opacity: cd === c.baseline ? 0.6 : 0.85 }, yaxis: ax, hovertemplate: `%{text}<br>%{y}<extra>${esc(cd)}</extra>` }, cd, 'pts'));
+          }
+          const rm = roll(vals).map((v) => (v == null ? null : isLog(name) ? 10 ** v : v));
+          tr.push({ type: 'scatter', mode: 'lines', name: `${short(name)} 移動平均`, legendgroup: 'roll', showlegend: ax === 'y', x: xs, y: rm, yaxis: ax, line: { color: '#1F3B63', width: 2.2 }, hoverinfo: 'skip' });
+        };
+        panel(st.y, 'y'); panel(st.x, 'y2');
+        const L = baseLayout(420);
+        L.xaxis.title = { text: tx.title, font: { size: 10.5, color: '#667085' } }; L.xaxis.type = tx.type; L.xaxis.zeroline = false; L.margin = { l: 56, r: 8, t: 10, b: 40 };
+        L.yaxis = { ...L.yaxis, domain: [0.56, 1], title: axTitle(st.y, isLog(st.y) ? '，log' : ''), type: isLog(st.y) ? 'log' : 'linear' };
+        L.yaxis2 = { ...baseLayout(0).yaxis, domain: [0, 0.44], title: axTitle(st.x, isLog(st.x) ? '，log' : ''), type: isLog(st.x) ? 'log' : 'linear', anchor: 'x' };
+        L.legend = { orientation: 'h', x: 0, y: 1.08, font: { size: 10.5 } };
+        L.shapes = [];
+        if (cipIdx.length && (cipIdx[cipIdx.length - 1] - cipIdx[0]) < 0.7 * ord.length) L.shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: xs[cipIdx[0]], x1: xs[cipIdx[cipIdx.length - 1]], y0: 0, y1: 1, fillcolor: condColor(cip), opacity: 0.08, line: { width: 0 }, layer: 'below' });
         delete L.height; L.autosize = true;
-        Plotly.newPlot(b.querySelector('#ckTrend'), tr, L, { ...CFG, displayModeBar: false });
+        Plotly.newPlot(b.querySelector('#ckTrend'), orderTraces(tr), L, { ...CFG, displayModeBar: false }).then(bindHi);
       };
       draw();
     }, { wide: true });
@@ -3692,8 +3797,8 @@ ${linkChip()}</div>`;
     const fold = it.metric === 'fold', rate = it.metric === 'rate', inl = it.kind === 'inline';
     const hd = `<th>Series</th><th>N</th><th>Mean</th><th>σ</th>${fold ? '<th>Median</th>' : ''}${rate ? '<th>異常率</th>' : ''}${inl && S.res.hasWiw ? '<th>片內 σ</th>' : ''}<th>${fold ? '倍數' : rate ? '異常率差' : 'K-shift'}</th>${inl ? '<th>W2W σ 倍數</th>' : ''}`;
     return `<table class="tstat"><tr>${hd}</tr>
-      <tr><td><i class="dot" style="background:${BSLC}"></i>BSL ${esc(S.cfg.baseline)}</td><td>${first.bn}</td><td>${f4(first.bmean)}</td><td>${f4(first.bsd)}</td>${fold ? `<td>${f4(first.bmedian)}</td>` : ''}${rate ? `<td>${pct(first.rateB)}</td>` : ''}${inl && S.res.hasWiw ? `<td>${f4(first.wiwB)}</td>` : ''}<td>—</td>${inl ? '<td>—</td>' : ''}</tr>
-      ${S.cfg.cips.map((p) => { const x = cs[p]; return `<tr><td><i class="dot" style="background:${cipColor(p)}"></i>${esc(p)}</td><td>${x.n}</td><td>${f4(x.mean)}</td><td>${f4(x.sd)}</td>${fold ? `<td>${f4(x.median)}</td>` : ''}${rate ? `<td>${pct(x.rateC)}</td>` : ''}${inl && S.res.hasWiw ? `<td>${f4(x.wiwC)}${x.wiwRatio != null ? ` <span class="pill ${x.wiwLevel}">×${x.wiwRatio.toFixed(2)}</span>` : ''}</td>` : ''}<td><span class="pill ${x.level}">${esc(shiftTxt(x))}</span></td>${inl ? `<td>${x.sdRatio != null ? `<span class="pill ${x.sdLevel}">×${x.sdRatio.toFixed(2)}</span>` : '—'}</td>` : ''}</tr>`; }).join('')}</table>`;
+      <tr><td><i class="dot" style="background:${condColor(S.cfg.baseline)}"></i>BSL ${esc(S.cfg.baseline)}</td><td>${first.bn}</td><td>${f4(first.bmean)}</td><td>${f4(first.bsd)}</td>${fold ? `<td>${f4(first.bmedian)}</td>` : ''}${rate ? `<td>${pct(first.rateB)}</td>` : ''}${inl && S.res.hasWiw ? `<td>${f4(first.wiwB)}</td>` : ''}<td>—</td>${inl ? '<td>—</td>' : ''}</tr>
+      ${S.cfg.cips.map((p) => { const x = cs[p]; return `<tr><td><i class="dot" style="background:${cipColor(p)}"></i>${esc(p)}</td><td>${x.n}</td><td>${f4(x.mean)}</td><td>${f4(x.sd)}</td>${fold ? `<td>${f4(x.median)}</td>` : ''}${rate ? `<td>${pct(x.rateC)}</td>` : ''}${inl && S.res.hasWiw ? `<td>${f4(x.wiwC)}${x.wiwRatio != null ? ` <span class="pill ${x.wiwLevel}">×${x.wiwRatio.toFixed(1)}</span>` : ''}</td>` : ''}<td><span class="pill ${x.level}">${esc(shiftTxt(x))}</span></td>${inl ? `<td>${x.sdRatio != null ? `<span class="pill ${x.sdLevel}">×${x.sdRatio.toFixed(1)}</span>` : '—'}</td>` : ''}</tr>`; }).join('')}</table>`;
   }
 
   // ================================================================ trend matrix
@@ -3721,7 +3826,7 @@ ${linkChip()}</div>`;
         ${list.map((it) => `<div class="rh ${itemWorst(it, mode)}"><b>${esc(short(it.name))}</b><span>${esc(unit(it.name))}</span><span>${esc(RU.byId(it.cat).label.split('（')[0])}${it.metric === 'fold' ? '・log 軸' : it.metric === 'rate' ? `・固定值 ${f4(it.target)}` : ''}</span></div>` +
           G.map((g) => {
             const x0 = r.cells[it.name][g];
-            return `<div class="mc ${cellWorst(x0, it.kind)}" data-item="${esc(it.name)}" data-group="${esc(g)}" data-cip="${esc(c.cips[0])}" title="點擊放大"><div class="mh">${c.cips.map((p) => `<span class="pill ${x0[p].level}">${c.cips.length > 1 ? `${esc(p)} ` : ''}${esc(shiftTxt(x0[p]))}</span>${it.kind === 'inline' && isAbnL(x0[p].varLevel) ? `<span class="pill ${x0[p].varLevel}">σ ×${Math.max(x0[p].sdRatio || 0, x0[p].wiwRatio || 0).toFixed(2)}</span>` : ''}`).join('')}</div><div class="plot"></div></div>`;
+            return `<div class="mc ${cellWorst(x0, it.kind)}" data-item="${esc(it.name)}" data-group="${esc(g)}" data-cip="${esc(c.cips[0])}" title="點擊放大"><div class="mh">${c.cips.map((p) => `<span class="pill ${x0[p].level}">${c.cips.length > 1 ? `${esc(p)} ` : ''}${esc(shiftTxt(x0[p]))}</span>${it.kind === 'inline' && isAbnL(x0[p].varLevel) ? `<span class="pill ${x0[p].varLevel}">σ ×${Math.max(x0[p].sdRatio || 0, x0[p].wiwRatio || 0).toFixed(1)}</span>` : ''}`).join('')}</div><div class="plot"></div></div>`;
           }).join('')).join('')}</div>` : `<div class="empty">目前沒有黃燈或橘燈的 ${MOD[mode]} item。切換到「全部 ${MOD[mode]}」可以看全部 trend。</div>`}`;
     el.querySelectorAll('[data-mode]').forEach((x) => (x.onclick = () => { S.trend.mode = x.dataset.mode; renderTrend(); }));
     bindTrendX(el, renderTrend);
@@ -3796,7 +3901,7 @@ ${linkChip()}</div>`;
       const all = fig.stats.find((s) => s.cond === '全部');
       const check = pr && all.r != null ? (Math.sign(all.r) === pr.sign ? `✔ 實際 r = ${all.r.toFixed(2)}，方向符合物理預期` : `✖ 實際 r = ${all.r.toFixed(2)}，方向與預期相反，請確認資料`) : '';
       $('cStat').innerHTML = `<table class="cstat"><tr><th>Condition</th><th>N</th><th>斜率${fig.logNote ? '（log）' : ''}</th><th>截距</th><th>r</th><th>R²</th><th>p（斜率）</th></tr>
-        ${fig.stats.map((s) => `<tr><td>${s.cond === '全部' ? '<b>全部</b>' : `<i class="dot" style="background:${s.cond === c.baseline ? BSLC : cipColor(s.cond)}"></i>${esc(s.cond)}`}</td><td>${s.n || 0}</td><td>${s.b != null ? f4(s.b) : '—'}</td><td>${s.a != null ? f4(s.a) : '—'}</td>
+        ${fig.stats.map((s) => `<tr><td>${s.cond === '全部' ? '<b>全部</b>' : `<i class="dot" style="background:${condColor(s.cond)}"></i>${esc(s.cond)}`}</td><td>${s.n || 0}</td><td>${s.b != null ? f4(s.b) : '—'}</td><td>${s.a != null ? f4(s.a) : '—'}</td>
           <td>${s.r != null ? s.r.toFixed(3) : '—'}</td><td>${s.r2 != null ? s.r2.toFixed(3) : '—'}</td><td>${s.p != null ? App.statsLib.fmtP(s.p) : '—'}</td></tr>`).join('')}</table>
         <div class="small" style="margin-top:6px">${esc(check)}${all.r2 != null && all.r2 < 0.1 ? '　R² 很低：兩者幾乎沒有線性關係，偏移不太可能由這個項目解釋。' : ''}</div>`;
     };
@@ -3894,7 +3999,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     const RED = 'C00000', BLUE = '1F3FBF', INK = '000000', MUTED = '595959', LINE = 'BFBFBF', GREY = '808080';
     const LVC = { orange: 'C00000', yellow: 'B8860B', green: '2E7D32', na: '808080' };
     const CIPH = ['1F3FBF', 'E8590C', '0F9D8A', 'B5179E', '6741D9'];
-    const cipHex = (p) => CIPH[Math.max(0, c.cips.indexOf(p)) % CIPH.length];
+    const cipHex = (p) => condColor(p).replace('#', '').toUpperCase();
     let page = 0, done = 0, total = 0;
     const strip = (u) => u.replace(/^data:/, '');
     const tick = () => busy(`產生 PPT 圖表 ${++done} / ${total}…`);
@@ -3912,11 +4017,10 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     };
     const section = (s, t, x, y, w) => { s.addShape(pptx.ShapeType.rect, { x, y: y + 0.07, w: 0.16, h: 0.16, fill: { color: 'FFFFFF' }, line: { color: BLUE, width: 1.5 } }); tb(s, t, { x: x + 0.26, y, w: w - 0.26, h: 0.3, fontSize: 14, bold: true, color: BLUE, underline: { style: 'sng' }, fit: 'shrink' }); };
     /** summary bullets: red dot, black bold, numbers / conclusions in blue. items = array of run arrays [{t, c}] */
-    const bullets = (s, items, y, h) => s.addText(items.flatMap((runs, i) => [{ text: '● ', options: { color: RED, fontSize: 9, bold: true } }, ...runs.map((q) => ({ text: q.t, options: { color: q.c || INK, bold: true, fontSize: 13 } })), ...(i < items.length - 1 ? [{ text: '', options: { breakLine: true } }] : [])]),
+    const bullets = (s, items, y, h) => s.addText(items.flatMap((runs, i) => [{ text: '● ', options: { color: RED, fontSize: 9, bold: true } }, ...runs.map((q) => ({ text: q.t, options: { color: q.c || INK, bold: true, fontSize: 13, breakLine: !!q.br } })), ...(i < items.length - 1 ? [{ text: '', options: { breakLine: true } }] : [])]),
       { x: 0.7, y, w: SW - 1.4, h: h || 0.32 * items.length + 0.1, fontFace: FONT, margin: 0, valign: 'top', paraSpaceAfter: 4, fit: 'shrink' });
     /** K mini-table: one row per condition, name in condition colour, value in light colour */
-    const kTable = (s, x, y, rows, w = 1.6, fs = 10) => {
-      const rowH = 0.27;
+    const kTable = (s, x, y, rows, w = 1.6, fs = 10, rowH = 0.27) => {
       rows.forEach((q, i) => {
         s.addShape(pptx.ShapeType.rect, { x, y: y + i * rowH, w, h: rowH, fill: { color: 'FFFFFF' }, line: { color: LINE, width: 0.75 } });
         tb(s, q.name, { x: x + 0.04, y: y + i * rowH, w: w * 0.4, h: rowH, fontSize: fs, bold: true, color: q.color, valign: 'middle', fontFace: 'Arial', fit: 'shrink' });
@@ -3924,7 +4028,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       });
       return rows.length * rowH;
     };
-    const kRows = (item, g, withN = true) => [{ name: c.baseline, val: `BSL${withN ? ` (${r.cells[item][g][c.cips[0]].bn})` : ''}`, color: GREY },
+    const kRows = (item, g, withN = true) => [{ name: c.baseline, val: `BSL${withN ? ` (${r.cells[item][g][c.cips[0]].bn})` : ''}`, color: cipHex(c.baseline) },
       ...c.cips.map((p) => { const x = r.cells[item][g][p]; return { name: p, val: `${shiftTxt(x)}${withN && x.level !== 'na' ? ` (${x.n})` : ''}`, color: cipHex(p), vcolor: LVC[x.level] }; })];
     /** chart image for PPT: no legend, larger fonts, tight margins */
     /** fs = tick-label px at the PNG's own scale (figPng renders at scale 2); msc = marker-size multiplier so dots stay visible when the image is shrunk onto the slide */
@@ -3941,74 +4045,90 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     const numLine = (f) => { const x = f.cell; return x.metric === 'rate' ? `異常率 ${pct(x.rateC)} vs BSL ${pct(x.rateB)}（固定值 ${f4(x.item.target)}）` : x.metric === 'fold' ? `median ${f4(x.median)} vs BSL ${f4(x.bmedian)}` : `mean ${f4(x.mean)} vs BSL ${f4(x.bmean)}`; };
     const hlTitle = (f) => `${short(f.cell.item.name)}${r.groups.length > 1 ? ` @ ${f.cell.group}` : ''}：${f.cell.cip} ${fTxt(f)}`;
     const cipN = (p) => r.nWafer[p] || 0;
-    // ================================================================ cover / summary
+    /** "P1 CIP1：Rs_M2 +1.7σ、Rc_V2 +2.6σ" — one line per group × CIP, abnormal items only, in HL order */
+    const hlLines = (m) => { const by = new Map(); for (const f of r.findings[m]) { const k = `${r.groups.length > 1 ? f.cell.group + ' ' : ''}${f.cell.cip}`; if (!by.has(k)) by.set(k, []); by.get(k).push(`${short(f.cell.item.name)} ${fTxt(f)}`); } return [...by].map(([k, a]) => ({ k, a })); };
+    // ================================================================ cover / summary: what shifted, per group × CIP; conditions + colours table carries the wafer counts
     {
       const s = frame(`BEOL 分析戰報：${c.cips.join('、')} vs ${c.baseline}`);
-      const items = [[{ t: `${c.cips.map((p) => `${p} CIP（${pcs(cipN(p))}）`).join('、')} vs ${c.baseline} BSL（${pcs(cipN(c.baseline))}）`, c: BLUE }, { t: `　資料：${S.file}${r.dateRange ? `　期間 ${d(r.dateRange[0])}–${d(r.dateRange[1])}` : ''}${c.groupCol ? `　分組：${c.groupCol}（${r.groups.length} 組）` : ''}` }]];
+      const items = [];
       for (const m of mods) {
-        const cnt = r.cnt[m], fs = r.findings[m];
-        const runs = [{ t: `${MOD[m]}：` }, { t: `橘 ${cnt.orange}、黃 ${cnt.yellow}、綠 ${cnt.green}${cnt.na ? `、灰 ${cnt.na}` : ''}${m === 'inline' ? `、變異異常 ${r.varCnt.orange + r.varCnt.yellow}` : ''}`, c: BLUE }];
-        const top = fs.slice(0, 6).map((f) => `${short(f.cell.item.name)}${r.groups.length > 1 ? `@${f.cell.group}` : ''} ${fTxt(f)}`);
-        if (top.length) runs.push({ t: `　${top.join('、')}${fs.length > 6 ? `…（共 ${fs.length}）` : ''}`, c: INK });
-        else runs.push({ t: '　全部 within 門檻，CIP 與 BSL match' });
+        const L = hlLines(m);
+        if (!L.length) { items.push([{ t: `${MOD[m]}：` }, { t: 'CIP 與 BSL match', c: BLUE }]); continue; }
+        const runs = [{ t: `${MOD[m]}　` }];
+        L.slice(0, 6).forEach((l, i) => { runs.push({ t: `${i ? '　　　　' : ''}${l.k}　` }, { t: l.a.join('、'), c: BLUE, br: i < Math.min(L.length, 6) - 1 || L.length > 6 }); });
+        if (L.length > 6) runs.push({ t: `　　　　…另 ${L.length - 6} 組，見 HL 總表`, c: MUTED });
         items.push(runs);
       }
-      bullets(s, items, 1.1, 2.6);
-      // condition legend block (what the colours mean across the deck)
-      section(s, '條件與顏色', 0.6, 3.9, 6);
-      const rows = [{ name: c.baseline, val: `BSL (${cipN(c.baseline)})`, color: GREY }, ...c.cips.map((p) => ({ name: p, val: `CIP (${cipN(p)})`, color: cipHex(p) }))];
-      kTable(s, 0.6, 4.3, rows, 2.6, 11);
-      tb(s, `燈號：K 綠 ≤ ${r.th.kG}σ、橘 > ${r.th.kO}σ；LK 倍數 綠 ≤ ×${r.th.fG}、橘 > ×${r.th.fO}；SPA 異常率差 綠 ≤ ${r.th.rG}%pt、橘 > ${r.th.rO}%pt；變異 σ 倍數 綠 ≤ ×${r.th.sG}、橘 > ×${r.th.sO}`, { x: 3.6, y: 4.3, w: SW - 4.2, h: 0.8, fontSize: 11, color: MUTED });
-      if (c.groupCol) { section(s, `分組 ${c.groupCol}`, 0.6, 5.5, 6); tb(s, r.groups.map((g) => `${g}（${c.cips.map((p) => `${p} ${(r.byG.get(g) || []).filter((q) => r.cOf(q) === p).length}`).join('、')} / BSL ${(r.byG.get(g) || []).filter((q) => r.cOf(q) === c.baseline).length}）`).join('　'), { x: 0.6, y: 5.9, w: SW - 1.2, h: 0.9, fontSize: 11, color: MUTED, fit: 'shrink' }); }
+      bullets(s, items, 1.1, 3.6);
+      section(s, '條件與顏色', 0.6, 5.0, 6);
+      kTable(s, 0.6, 5.4, [{ name: c.baseline, val: `BSL (${cipN(c.baseline)})`, color: cipHex(c.baseline) }, ...c.cips.map((p) => ({ name: p, val: `CIP (${cipN(p)})`, color: cipHex(p) }))], 2.6, 11, Math.min(0.27, 1.6 / (c.cips.length + 1)));
+      tb(s, `${S.file}${c.groupCol ? `　分組 ${c.groupCol}` : ''}`, { x: 3.6, y: 5.4, w: SW - 4.2, h: 0.4, fontSize: 11, color: MUTED });
     }
     for (const m of mods) {
       const its = r.items.filter((i) => i.kind === m);
       // ================================================================ light table(s): native, editable
       const views = m === 'inline' ? [['mean', '點燈表（均值 K-shift）'], ['var', '變異比較（W2W／WIW σ 倍數）']] : [['mean', '點燈表']];
-      for (const [view, vt] of views) {
-        const nc = r.groups.length * c.cips.length, colW0 = 2.1, colW = Math.min(1.6, (SW - 1.2 - colW0) / Math.max(1, nc));
-        const hcell = (text, align = 'center') => ({ text, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align } });
-        const head = [hcell(`${MOD[m]} item${c.groupCol ? `\n${c.groupCol} →` : ''}`, 'left'),
-          ...r.groups.flatMap((g) => c.cips.map((p) => hcell(c.groupCol ? (c.cips.length > 1 ? `${g}\n${p}` : g) : `${p}\nvs ${c.baseline}`)))];
+      const nc = r.groups.length * c.cips.length, colW0 = 2.1, colW = Math.min(1.6, (SW - 1.2 - colW0) / Math.max(1, nc));
+      const many = nc > 8, fsL = many ? 9.5 : 11, rowH = many ? 0.29 : 0.34;
+      const hcell = (text, align = 'center') => ({ text, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align, fontSize: many ? 9 : 10.5 } });
+      const headL = [hcell(`${MOD[m]} item${c.groupCol ? `\n${c.groupCol} →` : ''}`, 'left'),
+        ...r.groups.flatMap((g) => c.cips.map((p) => hcell(c.groupCol ? (c.cips.length > 1 ? `${g}\n${p}` : g) : `${p}\nvs ${c.baseline}`)))];
+      const tables = views.map(([view, vt]) => {
         const rows = [], byCatP = new Map();
         [...its].sort((a, b) => (/^other/.test(a.cat) ? 1 : 0) - (/^other/.test(b.cat) ? 1 : 0)).forEach((it) => { if (!byCatP.has(it.cat)) byCatP.set(it.cat, []); byCatP.get(it.cat).push(it); });
-        const many = nc > 8, fs = many ? 9.5 : 11;
         for (const [cat, catIts] of byCatP) {
           rows.push([{ text: RU.byId(cat).label, options: { colspan: nc + 1, fill: { color: 'F2F2F2' }, color: MUTED, bold: true, fontSize: 9 } }]);
           for (const it of catIts) rows.push([{ text: short(it.name), options: { bold: true, align: 'left' } }, ...r.groups.flatMap((g) => c.cips.map((p) => {
-            const x = r.cells[it.name][g][p];
+            const x = r.cells[it.name][g][p], fs = fsL;
             const lvl = view === 'var' ? x.varLevel : x.level;
-            const t = view === 'var' ? [x.sdRatio != null ? `W2W ×${x.sdRatio.toFixed(2)}` : '', x.wiwRatio != null ? `WIW ×${x.wiwRatio.toFixed(2)}` : ''].filter(Boolean).join('\n') || '—' : shiftTxt(x);
-            return { text: t, options: { color: LVC[lvl] || GREY, bold: true, align: 'center', fontFace: 'Arial', fontSize: fs, fill: { color: lvl === 'orange' ? 'FBE3DA' : lvl === 'yellow' ? 'FBF1D8' : 'FFFFFF' } } };
+            const fill = { color: lvl === 'orange' ? 'FBE3DA' : lvl === 'yellow' ? 'FBF1D8' : 'FFFFFF' };
+            if (view === 'var') { const t = [x.sdRatio != null ? `W2W ×${x.sdRatio.toFixed(1)}` : '', x.wiwRatio != null ? `WIW ×${x.wiwRatio.toFixed(1)}` : ''].filter(Boolean).join('\n') || '—'; return { text: t, options: { color: LVC[lvl] || GREY, bold: true, align: 'center', fontFace: 'Arial', fontSize: fs, fill } }; }
+            return { text: x.level === 'na' ? [{ text: '—', options: { color: GREY, fontSize: fs } }] : [{ text: shiftTxt(x), options: { color: LVC[lvl], bold: true, fontSize: fs, breakLine: true } }, { text: `${x.n}pcs`, options: { color: '7F7F7F', fontSize: Math.max(7.5, fs - 2.5) } }], options: { align: 'center', fontFace: 'Arial', fill, valign: 'middle' } };
           }))]);
         }
-        head.forEach((h) => (h.options.fontSize = many ? 9 : 10.5));
-        const per = many ? 19 : 15, rowH = many ? 0.29 : 0.34;
-        for (let i = 0, pg = 0; i < rows.length; i += per, pg++) {
-          const s = frame(`${MOD[m]} ${vt}${rows.length > per ? `（${pg + 1}/${Math.ceil(rows.length / per)}）` : ''}`);
-          const cnt = r.cnt[m];
-          bullets(s, [[{ t: `${c.cips.map((p) => `${p}（${pcs(cipN(p))}）`).join('、')} vs ${c.baseline}（${pcs(cipN(c.baseline))}）：` }, { t: `橘 ${cnt.orange}、黃 ${cnt.yellow}、綠 ${cnt.green}${cnt.na ? `、灰 ${cnt.na}` : ''}`, c: BLUE }, { t: view === 'var' ? '　σ 倍數 = CIP ÷ BSL' : m === 'wat' ? '　數字 = K-shift（σ）；LK 為 median 倍數；SPA 為異常率差（%pt）' : '　數字 = K-shift（σ）', c: MUTED }]], 1.0);
-          s.addTable([head, ...rows.slice(i, i + per)], { x: Math.max(0.6, (SW - colW0 - colW * nc) / 2), y: 1.5, w: colW0 + colW * nc, colW: [colW0, ...Array(nc).fill(colW)], fontFace: FONT, fontSize: fs, rowH, valign: 'middle', margin: many ? 2 : 4, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
-        }
-      }
-      // ================================================================ HL 總表：燈、item、偏移（pcs）、對上什麼、先查
+        return { view, vt, rows, rh: view === 'var' ? rowH : rowH + 0.1 };
+      });
+      const tableH = (t, n) => (n + 1) * t.rh + 0.1;
+      const addLights = (s, t, y, rowsSlice) => s.addTable([headL, ...rowsSlice], { x: Math.max(0.6, (SW - colW0 - colW * nc) / 2), y, w: colW0 + colW * nc, colW: [colW0, ...Array(nc).fill(colW)], fontFace: FONT, fontSize: fsL, rowH: t.rh, valign: 'middle', margin: many ? 2 : 4, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
+      // ---- HL 總表 rows (built here so a short module can share the lights page)
       const fsAll = r.findings[m];
-      if (fsAll.length) {
-        const hc = (t, w) => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align: 'left', fontSize: 10.5 } });
-        const head = [hc('燈'), hc(`${MOD[m]} item${r.groups.length > 1 ? ' @ 組' : ''}`), hc('偏移（pcs）'), hc('對上什麼'), hc('先查')];
-        const rowsS = fsAll.map((f) => {
-          const lv = r.lvOf(f), oks = okRows(f), cr = checkRows(f), first = cr.find((q) => q.st === 'need' || q.st === 'weak') || cr.find((q) => q.st === 'ok' && q.tool) || cr.find((q) => q.st === 'ok');
-          return [{ text: LVZH[lv], options: { color: LVC[lv], bold: true, align: 'center', fontSize: 11 } },
-            { text: `${short(f.cell.item.name)}${r.groups.length > 1 ? ` @ ${f.cell.group}` : ''}`, options: { bold: true, fontSize: 10.5 } },
-            { text: `${f.cell.cip} ${fTxt(f)} (${f.cell.n})`, options: { fontFace: 'Arial', bold: true, color: LVC[lv], fontSize: 10.5 } },
-            { text: oks.length ? oks.join('；') : '未對上 inline／機台／yield', options: { fontSize: 9.5, color: oks.length ? INK : MUTED } },
-            { text: first ? `${CKI[first.st] || '·'} ${first.text}${first.st === 'ok' && first.note ? `　${first.note}` : ''}` : '—', options: { fontSize: 9.5 } }];
-        });
-        const per = 9, Wc = [0.55, 2.3, 1.9, SW - 1.2 - 0.55 - 2.3 - 1.9 - 2.6, 2.6];
-        for (let i = 0, pg = 0; i < rowsS.length; i += per, pg++) {
-          const s = frame(`${MOD[m]} HL 總表${rowsS.length > per ? `（${pg + 1}/${Math.ceil(rowsS.length / per)}）` : ''}`);
-          bullets(s, [[{ t: `${fsAll.length} 個 HL：` }, { t: `橘 ${fsAll.filter((f) => r.lvOf(f) === 'orange').length}、黃 ${fsAll.filter((f) => r.lvOf(f) === 'yellow').length}`, c: BLUE }, { t: '　✔ 有對上　○ 缺資料　△ 關聯弱', c: MUTED }]], 1.0);
-          s.addTable([head, ...rowsS.slice(i, i + per)], { x: 0.6, y: 1.5, w: SW - 1.2, colW: Wc, fontFace: FONT, fontSize: 10, rowH: 0.52, valign: 'middle', margin: 3, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
+      const hc = (t) => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align: 'left', fontSize: 10.5 } });
+      const headH = [hc('燈'), hc(`${MOD[m]} item${r.groups.length > 1 ? ' @ 組' : ''}`), hc('偏移'), hc('對上什麼'), hc('先查')];
+      const rowsS = fsAll.map((f) => {
+        const lv = r.lvOf(f), oks = okRows(f), cr = checkRows(f), first = cr.find((q) => q.st === 'need' || q.st === 'weak') || cr.find((q) => q.st === 'ok' && q.tool) || cr.find((q) => q.st === 'ok');
+        return [{ text: LVZH[lv], options: { color: LVC[lv], bold: true, align: 'center', fontSize: 11 } },
+          { text: `${short(f.cell.item.name)}${r.groups.length > 1 ? ` @ ${f.cell.group}` : ''}`, options: { bold: true, fontSize: 10.5 } },
+          { text: `${f.cell.cip} ${fTxt(f)}`, options: { fontFace: 'Arial', bold: true, color: LVC[lv], fontSize: 10.5 } },
+          { text: oks.length ? oks.join('；') : '未對上 inline／機台／yield', options: { fontSize: 9.5, color: oks.length ? INK : MUTED } },
+          { text: first ? `${CKI[first.st] || '·'} ${first.text}${first.st === 'ok' && first.note ? `　${first.note}` : ''}` : '—', options: { fontSize: 9.5 } }];
+      });
+      const Wc = [0.55, 2.3, 1.9, SW - 1.2 - 0.55 - 2.3 - 1.9 - 2.6, 2.6], hlRowH = 0.5;
+      const addHL = (s, y, slice) => s.addTable([headH, ...slice], { x: 0.6, y, w: SW - 1.2, colW: Wc, fontFace: FONT, fontSize: 10, rowH: hlRowH, valign: 'middle', margin: 3, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
+      const Lhl = hlLines(m).slice(0, 4);
+      const sumY = 1.1 + 0.33 * Math.max(1, Lhl.length) + 0.2;
+      const addSummary = (s) => bullets(s, Lhl.length ? Lhl.map((l) => [{ t: `${l.k}　` }, { t: l.a.join('、'), c: BLUE }]) : [[{ t: 'CIP 與 BSL match', c: BLUE }]], 1.0, 1.4);
+      const totalLightH = tables.reduce((a, t) => a + tableH(t, t.rows.length) + 0.45, 0), hlH = fsAll.length ? (fsAll.length + 1) * hlRowH + 0.5 : 0;
+      if (sumY + totalLightH + hlH <= SH - 0.5) {
+        // short module → one page: all light tables + HL table
+        const s = frame(`${MOD[m]} 點燈表${fsAll.length ? '與 HL 總表' : ''}`); addSummary(s);
+        let y = sumY;
+        tables.forEach((t, i) => { if (i > 0 || tables.length > 1) { section(s, t.vt, 0.6, y, 6); y += 0.4; } addLights(s, t, y, t.rows); y += tableH(t, t.rows.length) + 0.25; });
+        if (fsAll.length) { section(s, `HL 總表　✔ 有對上　○ 缺資料　△ 關聯弱　✘ 未對上`, 0.6, y, SW - 1.2); addHL(s, y + 0.4, rowsS); }
+      } else {
+        for (const t of tables) {
+          const per = many ? 19 : 15;
+          for (let i = 0, pg = 0; i < t.rows.length; i += per, pg++) {
+            const s = frame(`${MOD[m]} ${t.vt}${t.rows.length > per ? `（${pg + 1}/${Math.ceil(t.rows.length / per)}）` : ''}`); addSummary(s);
+            addLights(s, t, sumY, t.rows.slice(i, i + per));
+          }
+        }
+        if (fsAll.length) {
+          const per = 9;
+          for (let i = 0, pg = 0; i < rowsS.length; i += per, pg++) {
+            const s = frame(`${MOD[m]} HL 總表${rowsS.length > per ? `（${pg + 1}/${Math.ceil(rowsS.length / per)}）` : ''}`);
+            bullets(s, [[{ t: `${fsAll.length} 個 HL`, c: BLUE }, { t: '　✔ 有對上　○ 缺資料　△ 關聯弱　✘ 未對上', c: MUTED }]], 1.0);
+            addHL(s, 1.5, rowsS.slice(i, i + per));
+          }
         }
       }
       // ================================================================ HL detail pages
@@ -4017,16 +4137,16 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       for (const f of picked.slice(0, 12)) {
         const x = f.cell, g = x.group, p = x.cip, it = x.item;
         const m1 = mainFig(f, 300), m2 = partnerFig(f, 300);
-        const a = await pptFig(m1.fig, 900, 400, 20, 2.2), b = m2 ? await pptFig(m2.fig, 900, 400, 20, 2.2) : null;
+        const a = await pptFig(m1.fig, 1050, 400, 20, 2.2), b = m2 ? await pptFig(m2.fig, 1050, 400, 20, 2.2) : null;
         const s = frame(hlTitle(f));
         const oks = okRows(f);
         bullets(s, [
-          [{ t: `${hlTitle(f)}（${pcs(x.n)}） vs ${c.baseline} BSL（${pcs(x.bn)}），${numLine(f)}`, c: INK }],
+          [{ t: `${hlTitle(f)}，${numLine(f)}`, c: INK }],
           [oks.length ? { t: oks.join('；'), c: BLUE } : { t: '同層／鄰層 inline、機台、yield 皆未對上 → 先補資料再判斷', c: MUTED }],
         ], 1.0, 0.75);
-        const top = 1.85, figH = b ? 2.1 : 4.4, figW = Math.min(figH * 900 / 400, 7.2), kx = 0.6, fx = kx + 1.7;
+        const top = 1.85, figH = b ? 2.1 : 4.4, figW = Math.min(figH * 1050 / 400, 7.2), kx = 0.6, fx = kx + 1.7;
         section(s, `${m1.title}${r.groups.length > 1 ? ` ｜ ${g}` : ''}`, kx, top, fx + figW - kx);
-        kTable(s, kx, top + 0.45, kRows(it.name, g));
+        kTable(s, kx, top + 0.45, kRows(it.name, g), 1.6, 10, Math.min(0.27, (figH - 0.15) / (c.cips.length + 1)));
         s.addImage({ data: a, x: fx, y: top + 0.35, w: figW, h: figH });
         if (b) {
           const y2 = top + 0.35 + figH + 0.25;
@@ -4049,39 +4169,43 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
           s.addTable([[{ text: 'item', options: { bold: true, color: MUTED } }, { text: `${p} vs ${c.baseline}`, options: { bold: true, color: MUTED, align: 'right' } }], ...rowsO], { x: rx, y: top + 3.25, w: rw, colW: [rw * 0.6, rw * 0.4], fontFace: FONT, fontSize: 10.5, rowH: 0.25, border: { type: 'solid', pt: 0.5, color: LINE }, margin: 2, autoPage: false });
         }
       }
-      // ================================================================ overview trend: abnormal items 2×2, green items 3×3 (appendix), per group
+      // ================================================================ overview trend: abnormal items per group (adaptive 1×1 / 1×2 / 2×2), green items pooled into a 3×3 appendix
+      const cells = (list, n) => { const cnt = list.length, cols = cnt === 1 ? 1 : cnt === 2 ? 2 : n, rows = Math.max(1, Math.ceil(Math.min(cnt, n * n) / cols)); return { cols, rows: cnt <= 2 ? 1 : rows }; };
+      const grid = async (list, n, title, runs) => {
+        const perPage = n * n;
+        for (let i = 0, pg = 0; i < list.length; i += perPage, pg++) {
+          const chunk = list.slice(i, i + perPage), nPg = Math.ceil(list.length / perPage);
+          const s = frame(`${title}${nPg > 1 ? `（${pg + 1}/${nPg}）` : ''}`);
+          bullets(s, [runs], 1.0, 0.45);
+          const { cols, rows } = cells(chunk, n);
+          const top = 1.5, gap = 0.2, areaW = SW - 1.2, areaH = SH - top - 0.5;
+          const cw = (areaW - gap * (cols - 1)) / cols, ch = Math.min((areaH - gap * (rows - 1)) / rows, cols === 1 ? 4.2 : 3.4);
+          const big = cols <= 2, kw = big ? 1.55 : 1.3, fs = big ? 10 : 9;
+          for (let k = 0; k < chunk.length; k++) {
+            const { it, g } = chunk[k], x0 = 0.6 + (k % cols) * (cw + gap), y0 = top + Math.floor(k / cols) * (ch + gap);
+            tb(s, `${short(it.name)}${chunk.some((q) => q.g !== g) || (c.groupCol && list.some((q) => q.g !== chunk[0].g)) ? ` ｜ ${g}` : ''}${unit(it.name) ? `（${unit(it.name)}）` : ''}${it.metric === 'fold' ? '・log' : it.metric === 'rate' ? `・固定值 ${f4(it.target)}` : ''}`, { x: x0, y: y0, w: cw, h: 0.26, fontSize: big ? 12 : 10.5, bold: true, color: INK, fontFace: 'Arial', fit: 'shrink' });
+            const kr = kRows(it.name, g), rh = Math.min(0.27, (ch - 0.36) / kr.length);
+            kTable(s, x0, y0 + 0.3, kr, kw, rh < 0.22 ? fs - 1.5 : fs, rh);
+            const fig = trendFig(it.name, g, 300, { mini: true }); fig.layout.xaxis.title = null;
+            const iw0 = cw - kw - 0.1, ih0 = ch - 0.3;
+            const pw = big ? Math.round(640 * Math.max(1, iw0 / 4.3)) : 520, ph = big ? 350 : 290;   // wider PNG when the cell is wide so the image fills it
+            const png = await pptFig(fig, pw, ph, big ? 17 : 16, big ? 2.4 : 2.2);
+            const ratio = pw / ph, iw = Math.min(iw0, ih0 * ratio), ih = iw / ratio;
+            s.addImage({ data: png, x: x0 + kw + 0.1, y: y0 + 0.28, w: iw, h: ih });
+          }
+        }
+      };
+      const greens = [];
       for (const g of r.groups) {
         const abn = its.filter((it) => isAbnL(cellWorst(r.cells[it.name][g], m))), grn = its.filter((it) => !isAbnL(cellWorst(r.cells[it.name][g], m)));
+        greens.push(...grn.map((it) => ({ it, g })));
+        if (!abn.length) continue;
         const gl = c.groupCol ? g : `${c.cips.join('、')} vs ${c.baseline}`;
-        const nB = (r.byG.get(g) || []).filter((q) => r.cOf(q) === c.baseline).length;
-        const sumRuns = (appendix) => { if (appendix) return [{ t: `${gl}：${c.cips.map((p) => `${p}（${pcs((r.byG.get(g) || []).filter((q) => r.cOf(q) === p).length)}）`).join('、')} vs ${c.baseline}（${pcs(nB)}）：` }, { t: `綠燈 item ${grn.length} 個，全部 within 門檻`, c: BLUE }]; const o = abn.filter((it) => cellWorst(r.cells[it.name][g], m) === 'orange'), y = abn.filter((it) => cellWorst(r.cells[it.name][g], m) === 'yellow'); const lab = (it) => `${short(it.name)} ${c.cips.map((p) => shiftTxt(r.cells[it.name][g][p])).join('/')}`;
-          const runs = [{ t: `${gl}：${c.cips.map((p) => `${p}（${pcs((r.byG.get(g) || []).filter((q) => r.cOf(q) === p).length)}）`).join('、')} vs ${c.baseline}（${pcs(nB)}）：` }];
-          if (o.length) { runs.push({ t: `橘 ${o.length}（` }, { t: o.map(lab).join('、'), c: BLUE }, { t: '）' }); }
-          if (y.length) { runs.push({ t: `${o.length ? '、' : ''}黃 ${y.length}（` }, { t: y.map(lab).join('、'), c: BLUE }, { t: '）' }); }
-          runs.push({ t: `${abn.length ? '；其餘' : '全部'} within 門檻` }); return runs; };
-        const grid = async (list, n, titleTag) => {
-          const perPage = n * n;
-          for (let i = 0, pg = 0; i < list.length; i += perPage, pg++) {
-            const chunk = list.slice(i, i + perPage), nPg = Math.ceil(list.length / perPage);
-            const s = frame(`${MOD[m]} 總覽 trend${titleTag}${c.groupCol ? ` ｜ ${g}` : ''}${nPg > 1 ? `（${pg + 1}/${nPg}）` : ''}`);
-            bullets(s, [sumRuns(n === 3)], 1.0, 0.45);
-            const top = 1.5, gap = 0.2, areaW = SW - 1.2, areaH = SH - top - 0.5;
-            const cw = (areaW - gap * (n - 1)) / n, ch = (areaH - gap * (n - 1)) / n, kw = n === 2 ? 1.55 : 1.3, fs = n === 2 ? 10 : 9;
-            for (let k = 0; k < chunk.length; k++) {
-              const it = chunk[k], x0 = 0.6 + (k % n) * (cw + gap), y0 = top + Math.floor(k / n) * (ch + gap);
-              tb(s, `${short(it.name)}${unit(it.name) ? `（${unit(it.name)}）` : ''}${it.metric === 'fold' ? '・log' : it.metric === 'rate' ? `・固定值 ${f4(it.target)}` : ''}`, { x: x0, y: y0, w: cw, h: 0.26, fontSize: n === 2 ? 12 : 10.5, bold: true, color: INK, fontFace: 'Arial', fit: 'shrink' });
-              kTable(s, x0, y0 + 0.3, kRows(it.name, g), kw, fs);
-              const fig = trendFig(it.name, g, 300, { mini: true }); fig.layout.xaxis.title = null;
-              const pw = n === 2 ? 640 : 520, ph = n === 2 ? 350 : 290;
-              const png = await pptFig(fig, pw, ph, n === 2 ? 17 : 16, n === 2 ? 2.4 : 2.2);
-              const iw0 = cw - kw - 0.1, ih0 = ch - 0.3, ratio = pw / ph, iw = Math.min(iw0, ih0 * ratio), ih = iw / ratio;
-              s.addImage({ data: png, x: x0 + kw + 0.1, y: y0 + 0.28, w: iw, h: ih });
-            }
-          }
-        };
-        if (abn.length) await grid(abn, 2, '');
-        if (grn.length) await grid(grn, 3, '（附錄：綠燈 item）');
+        const lab = (it) => `${short(it.name)} ${c.cips.filter((p) => isAbnL(r.cells[it.name][g][p].level) || isAbnL(r.cells[it.name][g][p].varLevel)).map((p) => `${c.cips.length > 1 ? p + ' ' : ''}${shiftTxt(r.cells[it.name][g][p])}`).join('、')}`;
+        const o = abn.filter((it) => cellWorst(r.cells[it.name][g], m) === 'orange'), y = abn.filter((it) => cellWorst(r.cells[it.name][g], m) === 'yellow');
+        await grid(abn.map((it) => ({ it, g })), 2, `${MOD[m]} 總覽 trend${c.groupCol ? ` ｜ ${g}` : ''}`, [{ t: `${gl}　` }, { t: [...o, ...y].map(lab).join('、'), c: BLUE }]);
       }
+      if (greens.length) await grid(greens, 3, `${MOD[m]} 總覽 trend（附錄：綠燈 item）`, [{ t: `綠燈 item ${greens.length} 格，全部 within 門檻`, c: BLUE }]);
     }
     // ================================================================ conclusions
     {
@@ -4233,7 +4357,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     App.toast('已複製結論文字，可以直接貼到 mail 或 chat', 'ok');
   }
 
-  App.rptUI = { renderPrep, applyPrep, prepPending, crossChecks, factorVerdict, figPng, trendFig, mainFig, partnerFig, checkRows, loadFile, linkFile, unlink, openToolWin, checkHint, generate, showTab, setMode, exportHtml, exportPpt, buildHtml, buildPpt, summary, openCell, openCorrWin, closeAllWins, selectHL, wins: WM, kbImport, kbSave, kbOverlay };
+  App.rptUI = { applyVis, visInit, openColorPop, renderPrep, applyPrep, prepPending, crossChecks, factorVerdict, figPng, trendFig, mainFig, partnerFig, checkRows, loadFile, linkFile, unlink, openToolWin, checkHint, generate, showTab, setMode, exportHtml, exportPpt, buildHtml, buildPpt, summary, openCell, openCorrWin, closeAllWins, selectHL, wins: WM, kbImport, kbSave, kbOverlay };
 })();
 
 </script>

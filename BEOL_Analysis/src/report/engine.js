@@ -8,7 +8,7 @@
   E.cat = (v) => (v == null ? '(空白)' : v instanceof Date ? App.fmtDate(v) : typeof v === 'number' ? App.fmtNum(v) : String(v));
   E.natCmp = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
-  const fmtK = (k) => (k == null || !isFinite(k) ? '—' : Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`);
+  const fmtK = (k) => (k == null || !isFinite(k) ? '—' : Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(1)}σ`);
   const pct = (x) => (x == null ? '—' : `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`);
   E.fmtK = fmtK; E.pct = pct;
   const median = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -191,7 +191,7 @@
               cell.fold = mc / mb; cell.reason = '';
               cell.dir = Math.sign(Math.log(cell.fold));
               cell.level = lv(Math.max(cell.fold, 1 / cell.fold), th.fG, th.fO);
-              cell.text = `×${cell.fold >= 10 ? cell.fold.toFixed(1) : cell.fold.toFixed(2)}`;
+              cell.text = `×${cell.fold.toFixed(1)}`;
             } else { cell.level = 'na'; cell.reason = reason || '無正值資料'; }
           } else if (it.metric === 'rate') {
             const tol = Math.max(1e-6, Math.abs(it.target) * 0.005);
@@ -256,7 +256,7 @@
       findings.inline = [...byCell.values()].map((arr) => {
         if (arr.length < 2) return arr[0];
         const m = arr.find((f) => f.type === 'mean'), v = arr.find((f) => f.type === 'var');
-        const vt = `${v.which === 'wiw' ? '片內 σ' : 'wafer 間 σ'} ×${(v.which === 'wiw' ? v.cell.wiwRatio : v.cell.sdRatio).toFixed(2)}`;
+        const vt = `${v.which === 'wiw' ? '片內 σ' : 'wafer 間 σ'} ×${(v.which === 'wiw' ? v.cell.wiwRatio : v.cell.sdRatio).toFixed(1)}`;
         return { ...m, varOf: v, varLevel: v.varLevel, which: v.which, score: m.score + v.score,
           dx: { ...m.dx, title: `${m.dx.title}，${vt}`, verdict: `${m.dx.verdict}${v.dx.verdict ? ` ${v.dx.verdict}` : ''}`, checks: [...new Set([...(m.dx.checks || []), ...(v.dx.checks || [])])], causes: [...new Set([...(m.dx.causes || []), ...(v.dx.causes || [])])] } };
       });

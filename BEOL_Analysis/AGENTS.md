@@ -1,7 +1,7 @@
 # BEOL_Analysis：Agent 接手文件
 
 > 給接手的 AI agent（或工程師）閱讀。讀完這份就能繼續開發，不必回頭看對話紀錄。
-> 版本：BEOL 分析戰報 **v3.3**（2026-10-19）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
+> 版本：BEOL 分析戰報 **v3.5**（2026-10-24）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
 
 ---
 
@@ -166,6 +166,7 @@ node tests/e2e_variants.js               # 21 項：沒為工具設計過的資�
 - v1.0：WAT 戰報（K-shift、點燈表、診斷、Trend、Correlation、HTML 匯出）
 - v2.0：改名 BEOL；LK 改用倍數＋log 軸；SPA 改用固定值異常比例；新增 Inline 模組（均值、W2W、WIW、徑向分布、對 WAT 的影響）
 - v2.1：點燈格只顯示數字；戰報頁可切換分組、比較欄、BSL、CIP；儀表板版面；Trend 矩陣；浮動視窗；PPT 匯出；強化不同欄名的解析；單一 Python 產生器
+- v3.4：`S.vis = { order, colors, hi }`（`visInit`／`visSave`／`condColor`／`tag`／`orderTraces`／`applyVis`／`bindHi`）；Condition 列膠囊拖曳＋`openColorPop`；所有 trace 帶 `meta.cond`
 - v3.3：`buildPpt` 重寫（frame／bullets／section／kTable／pptFig；docs/PPT_STYLE.md）；`E.scanFactors` 的 `layerRel`／`offOnly`／`itemLayer`；`CIPC[0]` 深藍；UI 說明文字移除
 - v3.2：前處理分頁（`applyPrep`／`renderPrep`／`prepPending`，engine `E.prepScanBase`／`E.prepScanOutliers`／`E.applyPrep`，`S.prep = { dup, scale, excl, ack }`）；`crossChecks` 只供 PPT HL 總表；`checkRows` 灰格 → need；`E.scanFactors` 混淆針對 CIP；findings.inline 同格合併（`f.varOf`）；`E.dataQualityLines`；`summaryText` 去重；`App.toDate` 多格式
 - v3.1：機台列 🔍 → `openToolWin`（`checkRows` 回傳 `tool` 旗標）；檢查視窗 `st.group`／`st.conds`，`corrFig(..., { conds })`；trend X 軸 `S.trend = { x: 'seq'|'col', by }`，helper `orderCols`／`orderBy`／`orderRows`／`trendX`／`trendXCtrl`／`bindTrendX`，所有 trend（含共振圖、PPT）共用

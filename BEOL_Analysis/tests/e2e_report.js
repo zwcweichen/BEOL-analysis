@@ -60,12 +60,12 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
   const words = await page.evaluate(() => App.rpt.res.findings.wat.map((f) => [f.dx.title, f.dx.mean, f.dx.verdict, f.dx.causes.join('、')].join(' ｜ ')));
   words.forEach((w) => console.log('   ▸ ' + w.slice(0, 200)));
   ok(words.some((w) => /Rc_V12/.test(w) && /V12 CD/.test(w) && /同向/.test(w)), 'Rc finding cites V12 CD as consistent inline evidence');
-  ok(words.some((w) => /LK_M12/.test(w) && /×2\.9/.test(w) && /M12 CD/.test(w)), 'LK finding shows fold and cites M12 CD');
+  ok(words.some((w) => /LK_M12/.test(w) && /×3\.0/.test(w) && /M12 CD/.test(w)), 'LK finding shows fold and cites M12 CD');
   ok(words.some((w) => /SPA_M12/.test(w) && /異常比例/.test(w) && /M12 CD/.test(w)), 'SPA finding (fail rate) cites M12 CD');
 
   // ---- dashboard: lights show only the number (no arrow, no N)
   const L = await page.evaluate(() => [...document.querySelectorAll('#report .lt td.lc')].map((td) => td.textContent.trim()));
-  ok(L.length === 32 && L.every((t) => /^([+−]\d+\.\d\dσ|×\d+\.\d\d|[+−]\d+\.\d%pt|—)$/.test(t)), `overview lights show one number only (${L.slice(0, 6).join(' ')} …)`);
+  ok(L.length === 32 && L.every((t) => /^([+−]\d+\.\dσ|×\d+\.\d|[+−]\d+\.\d%pt|—|>[+−]10σ)$/.test(t)), `overview lights show one number only (${L.slice(0, 6).join(' ')} …)`);
   const dash = await page.evaluate(() => {
     const ov = document.querySelector('.pane.ov').getBoundingClientRect(), hl = document.querySelector('.pane.hl').getBoundingClientRect();
     return { side: hl.left > ov.right - 2, rows: document.querySelectorAll('.hl-row').length, det: document.querySelectorAll('#hlDet .js-plotly-plot').length };
@@ -176,8 +176,8 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   const has = (rx, f) => info.some((x) => rx.test(x.title) && f(x));
   ok(has(/WAT 點燈表/, (x) => x.tables === 1), 'PPT: WAT light table (native table)');
   // v3.3 design language: title = item + shift; HL detail = trend + partner (2 pictures) + 同組其他 item table; overview = abnormal 2×2 then green 3×3 appendix; conclusions page last
-  ok(has(/^Rc_V12 @ TMTQ11：FAB15 \+2\.33σ$/, (x) => x.pics === 2 && x.tables === 1), 'PPT: HL detail titled "item @ group：CIP shift", trend + correlation + 同組其他 item table');
-  ok(has(/WAT 總覽 trend ｜ TMRX12/, (x) => x.pics === 3) && has(/WAT 總覽 trend（附錄：綠燈 item） ｜ TMRX12/, (x) => x.pics === 5), 'PPT: overview trend split — abnormal items 2×2 (3 charts @ TMRX12), green items 3×3 appendix (5 charts)');
+  ok(has(/^Rc_V12 @ TMTQ11：FAB15 \+2\.3σ$/, (x) => x.pics === 2 && x.tables === 1), 'PPT: HL detail titled "item @ group：CIP shift", trend + correlation + 同組其他 item table');
+  ok(has(/WAT 總覽 trend ｜ TMRX12/, (x) => x.pics === 3) && has(/WAT 總覽 trend（附錄：綠燈 item）（1\/3）/, (x) => x.pics === 9) && !has(/附錄：綠燈 item） ｜/, () => true), 'PPT: overview trend split — abnormal items per group (3 charts @ TMRX12), green items pooled across groups into 3×3 appendix pages');
   ok(has(/Inline 點燈表/, (x) => x.tables === 1) && has(/^M13 THK @ TMWF54/, (x) => x.pics >= 1) && has(/Inline 總覽 trend/, (x) => x.pics >= 1), 'PPT: Inline light table, merged HL detail and overview trend');
   ok(info[info.length - 1].title === '結論' && info[0].title.startsWith('BEOL 分析戰報'), 'PPT: cover first, 結論 last (never ends on a chart page)');
 
@@ -190,16 +190,16 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   console.log('cross-checks:', xc.map((x) => `${x.label}:${x.state}:${x.txt}`).join(' | '));
   const tool = xc.find((x) => x.label === '機台');
   ok(tool && tool.state === 'ok' && /V12_ETCH_CH：CH_B/.test(tool.txt) && /CIP \d+% 走 CH_B/.test(tool.txt) && !/p ?=/.test(tool.txt), `tool card: one-line verdict, no p-values (${tool?.txt})`);
-  ok(xc.find((x) => x.label === 'Inline')?.state === 'ok' && /V12 CD AEI −2\.79σ 有關聯/.test(xc.find((x) => x.label === 'Inline').txt) && !/r = /.test(xc.find((x) => x.label === 'Inline').txt), 'Inline card: WAT ↔ inline line up (shift + 有關聯, no r)');
+  ok(xc.find((x) => x.label === 'Inline')?.state === 'ok' && /V12 CD AEI −2\.8σ 有關聯/.test(xc.find((x) => x.label === 'Inline').txt) && !/r = /.test(xc.find((x) => x.label === 'Inline').txt), 'Inline card: WAT ↔ inline line up (shift + 有關聯, no r)');
   ok(xc.find((x) => x.label === 'Yield')?.state === 'ok' && /Bin7_open/.test(xc.find((x) => x.label === 'Yield').txt), 'Yield card lists abnormal yield items only');
   // evidence-ranked mechanisms (v2.7／v2.8: demoted to one line under the single check list)
   const cz = await page.evaluate(() => [...document.querySelectorAll('.mech .mz')].map((t) => ({ st: t.className.replace('mz ', ''), t: t.innerText.replace(/\s+/g, ' ') })));
-  ok(cz[0].st === 'yes' && /Via CD 偏小/.test(cz[0].t) && /V12 CD AEI −2\.79σ/.test(cz[0].t), `mechanisms: supported cause first with its evidence (${cz[0].t})`);
+  ok(cz[0].st === 'yes' && /Via CD 偏小/.test(cz[0].t) && /V12 CD AEI −2\.8σ/.test(cz[0].t), `mechanisms: supported cause first with its evidence (${cz[0].t})`);
   ok(cz.filter((x) => x.st === 'no').length >= 1 && cz.every((x, i) => i === 0 || ({ yes: 0, na: 1, no: 2 })[x.st] >= ({ yes: 0, na: 1, no: 2 })[cz[i - 1].st]), 'mechanisms: order yes → no-data → contradicted (greyed)');
   // single check list (v2.8): every row has a status, an evidence note and opens the check window
   const cks = await page.evaluate(() => [...document.querySelectorAll('.cks li')].map((t) => ({ k: t.className.replace('ck ', ''), a: t.querySelector('a')?.innerText || '', n: t.querySelector('.cn')?.innerText || '', z: !!t.querySelector('.ckz') })));
   console.log('checks:', cks.map((x) => `${x.k}:${x.a}:${x.n}`).join(' | '));
-  ok(cks.some((x) => x.k === 'ok' && /V12 via CD/i.test(x.a) && /−2\.79σ 有關聯/.test(x.n)) && cks.some((x) => x.k === 'ok' && /chamber/i.test(x.a) && /CH_B/.test(x.n)) && cks.some((x) => x.k === 'need' && /匯入/.test(x.n)), 'checks: ✔ inline (shift + 有關聯), ✔ tool hit, ○ missing data → import');
+  ok(cks.some((x) => x.k === 'ok' && /V12 via CD/i.test(x.a) && /−2\.8σ 有關聯/.test(x.n)) && cks.some((x) => x.k === 'ok' && /chamber/i.test(x.a) && /CH_B/.test(x.n)) && cks.some((x) => x.k === 'need' && /匯入/.test(x.n)), 'checks: ✔ inline (shift + 有關聯), ✔ tool hit, ○ missing data → import');
   ok(cks.every((x) => x.z) && cks.length <= 6, 'every check row opens the check window (🔍)');
   await page.evaluate(() => document.querySelectorAll('.cks .ckz')[0].click()); await page.waitForSelector('.fwin #ckCorr.js-plotly-plot'); await page.waitForTimeout(500);
   const ckw = await page.evaluate(() => ({ v: document.querySelector('.fwin .tw-v').innerText, x: document.querySelector('.fwin [data-ck=x]').value, trend: !!document.querySelector('.fwin #ckTrend.js-plotly-plot'), imp: !!document.querySelector('.fwin [data-ck=imp]') }));
@@ -228,7 +228,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   await page.evaluate(() => { document.querySelector('#kbOn').click(); }); await page.waitForTimeout(500);
   const off = await page.evaluate(() => ({ on: App.rpt.kbOn, rows: [...document.querySelectorAll('.cks li')].map((t) => t.className.replace('ck ', '') + ':' + t.innerText.replace(/\s+/g, ' ')), mech: !!document.querySelector('.mech'), txt: document.querySelector('.pane.hl').innerText }));
   console.log('KB off:', off.rows.join(' | '));
-  ok(!off.on && !off.mech && off.rows.some((t) => /^ok:✔ 同層 V12 CD AEI −2\.79σ 有關聯/.test(t)) && off.rows.some((t) => /^ok:.*機台／chamber/.test(t)) && off.rows.some((t) => /yield／bin/.test(t)), 'KB off: same-layer / adjacent / yield / tool rows only, no physics');
+  ok(!off.on && !off.mech && off.rows.some((t) => /^ok:✔ 同層 V12 CD AEI −2\.8σ 有關聯/.test(t)) && off.rows.some((t) => /^ok:.*機台／chamber/.test(t)) && off.rows.some((t) => /yield／bin/.test(t)), 'KB off: same-layer / adjacent / yield / tool rows only, no physics');
   ok(!/r = /.test(off.txt), 'no correlation coefficient shown on the report (shift + 對上與否 only)');
   await page.evaluate(() => { document.querySelector('#kbOn').click(); }); await page.waitForTimeout(500);
   // tool analysis window: verdict line + run-rate bars (no table) + weekly chart + box plot with K annotations
@@ -243,7 +243,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   ok(tw.rate && tw.week && tw.weekTraces >= 2 && tw.weekShapes >= 1, 'run-rate % bars + weekly run chart with CIP-period shading');
   ok(tw.ann.some((t) => /[+−-]\d\.\d+σ/.test(t)) && tw.ann.length >= 2, `K-shift per tool annotated on the box plot (${tw.ann.join(', ')})`);
   ok(tw.ticks.length && /n \d+ ?\/ ?\d+|\d+ \/ \d+/.test(String(tw.ticks[0])) , `tick labels carry n BSL / CIP (${tw.ticks[0]})`);
-  ok(tw.order[0] === 'CH_B' && /\+3\.5\dσ/.test(tw.ann[0] || ''), `worst level (CH_B) is ordered first (${tw.order.join(' > ')})`);
+  ok(tw.order[0] === 'CH_B' && /\+3\.[56]σ/.test(tw.ann[0] || ''), `worst level (CH_B) is ordered first (${tw.order.join(' > ')})`);
   await page.evaluate(() => document.querySelector('.fwin [data-tc="M12_CMP_Tool"]').click()); await page.waitForTimeout(700);
   const tw2 = await page.evaluate(() => document.querySelector('.fwin #twBox')._fullLayout.xaxis.categoryarray || []);
   ok(tw2.length === 4 && tw2.some((n) => /CH_B × CMP02/.test(n)), `composite grouping V12_ETCH_CH × M12_CMP_Tool → 4 levels (${tw2.join(', ')})`);
@@ -330,7 +330,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   ok(near(I.m12.sd, Q.m12cd_TMRX12.sd) && I.m12.varLevel === 'orange', `M12 CD@TMRX12 W2W σ ×${I.m12.sd?.toFixed(2)} (pandas ×${Q.m12cd_TMRX12.sd.toFixed(2)}) orange`);
   console.log('inline findings:', I.kinds.join(' | '));
   ok(I.kinds.some((k) => /^merged:wiw:M13 THK@TMWF54/.test(k)) && I.kinds.some((k) => /^(var|merged):w2w:M12 CD/.test(k)) && I.kinds.filter((k) => /M13 THK@TMWF54/.test(k)).length === 1, 'v3.2: mean + WIW of the same cell merged into ONE HL (M13 THK@TMWF54); W2W finding for M12 CD');
-  ok(await page.evaluate(() => { const f = App.rpt.res.findings.inline.find((x) => x.varOf); return /K −4\.1\dσ，片內 σ ×2\.40/.test(f.dx.title) && /片內 σ/.test(document.querySelector('.hl-row .pill')?.innerText || ''); }), 'merged HL title "K −4.12σ，片內 σ ×2.40" and list pill carries both');
+  ok(await page.evaluate(() => { const f = App.rpt.res.findings.inline.find((x) => x.varOf); return /K −4\.1σ，片內 σ ×2\.4/.test(f.dx.title) && /片內 σ/.test(document.querySelector('.hl-row .pill')?.innerText || ''); }), 'merged HL title "K −4.12σ，片內 σ ×2.40" and list pill carries both');
   const iw = await page.evaluate(() => App.rpt.res.findings.inline.map((f) => [f.dx.title, f.dx.mean, f.dx.verdict, f.dx.causes.join('、')].join(' ｜ ')));
   iw.slice(0, 6).forEach((w) => console.log('   ▸ ' + w.slice(0, 200)));
   ok(iw.some((w) => /M13 THK/.test(w) && /片內 σ/.test(w) && /CMP/.test(w)), 'WIW wording survives the merge (片內 σ + CMP cause)');

@@ -136,7 +136,7 @@
     const isWiw = which === 'wiw', ratio = isWiw ? cell.wiwRatio : cell.sdRatio;
     const thk = cell.item.cat === 'thk';
     return {
-      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${isWiw ? '片內 σ' : 'wafer 間 σ'} ×${ratio.toFixed(2)}`,
+      title: `${R.parseName(cell.item.name).short}${cell.group && cell.group !== '全部' ? ` @ ${cell.group}` : ''}：${cell.cip} ${isWiw ? '片內 σ' : 'wafer 間 σ'} ×${ratio.toFixed(1)}`,
       mean: isWiw ? '片內均勻性變差' : 'wafer 間變異放大',
       cat: R.byId(cell.item.cat).label,
       causes: isWiw
@@ -248,7 +248,7 @@
     if (rel.r != null && Math.abs(rel.r) < 0.3) return 'weak';
     return 'strong';
   };
-  R.fmtK = (k) => (Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(2)}σ`);
+  R.fmtK = (k) => (Math.abs(k) >= 10 ? `>${k >= 0 ? '+' : '−'}10σ` : `${k >= 0 ? '+' : '−'}${Math.abs(k).toFixed(1)}σ`);
   R.fmtR = (r) => (r == null ? '' : `r = ${r >= 0 ? '' : '−'}${Math.abs(r).toFixed(2)}`);
   /** "V12 CD AEI −2.79σ（r = −0.84）" */
   // v3.0: r is used for the judgement but not shown（戰報只呈現偏移量與有無對上）；pass withR = true only in the check window

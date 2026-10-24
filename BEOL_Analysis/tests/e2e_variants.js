@@ -109,7 +109,7 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(/同層 .*未偏移；鄰層 M2 (THK|DISH)/.test(v.v) && /有關聯/.test(v.v) && !/topography/.test(v.v), `Rs_M3 verdict: same layer flat → adjacent M2 with r (${v.v.slice(0, 70)}…)`);
     ok(/M2 THK／dishing/.test(v.k0), 'cross-layer check listed first');
     const cz = await page.evaluate(() => [...document.querySelectorAll('.mech .mz')].map((t) => t.className.replace('mz ', '') + ':' + t.innerText.replace(/\s+/g, ' ')));
-    ok(/^yes:✔ 下層 topography 繼承/.test(cz[0]) && /M2 DISH \+2\.8\dσ/.test(cz[0]) && cz.some((t) => /^no:✘ Cu 厚度偏薄/.test(t) && /M3 THK 未偏移/.test(t)), `mechanisms ranked by evidence: ${cz[0]} … ${cz[cz.length - 1]}`);
+    ok(/^yes:✔ 下層 topography 繼承/.test(cz[0]) && /M2 DISH \+2\.[89]σ/.test(cz[0]) && cz.some((t) => /^no:✘ Cu 厚度偏薄/.test(t) && /M3 THK 未偏移/.test(t)), `mechanisms ranked by evidence: ${cz[0]} … ${cz[cz.length - 1]}`);
   });
   await run(path.join(SD, 'variants', 'H_longnames.xlsx'), async (page, st) => {
     ok(st.cond === 'FAB_Name' && st.base === 'FAB18_U%_BSL' && st.group === 'Product', 'user-like file: condition FAB_Name (values FAB18_U%_BSL / FAB15_U%_BSL)');
@@ -164,6 +164,28 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(p1.pend.dups === 0 && p1.bn === 120 && p1.nw === 240, 'dup → 取平均: BSL N 120, wafer count 240');
     const foot = await page.evaluate(() => { document.querySelector('#tabs button[data-tab=report]').click(); return document.querySelector('.lt tr.sum')?.innerText || ''; });
     ok(/橘 \d/.test(foot) && !/\d\+\d/.test(foot), `lights-table footer reads 橘 n 黃 n (${foot.replace(/\s+/g, ' ').slice(0, 60)})`);
+  });
+  // ---- v3.4 condition style: layer order, colours, highlight — six conditions
+  await run(path.join(SD, 'variants', 'K_sixcond.xlsx'), async (page, st) => {
+    ok(st.cips.length === 5 && st.base === 'POR', `six conditions detected (${st.cips.join(',')} vs ${st.base})`);
+    const v0 = await page.evaluate(() => ({ order: App.rpt.vis.order, chips: [...document.querySelectorAll('.cchip')].map((x) => x.dataset.cond), bottom: document.querySelector('#hlDet .fig .plot.js-plotly-plot').data.filter((d) => d.meta && d.meta.cond).map((d) => d.meta.cond) }));
+    ok(v0.order[v0.order.length - 1] === 'POR' && v0.chips.join() === v0.order.join() && v0.bottom[0] === 'POR' && v0.bottom[v0.bottom.length - 1] === 'CIP1', `default layer order: BSL at the bottom, first CIP on top (${v0.bottom.join('<')})`);
+    await page.evaluate(() => { const a = document.querySelector('.cchip[data-cond=CIP3]'), b = document.querySelector('.cchip[data-cond=CIP1]'); const dt = new DataTransfer(); a.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true })); b.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true })); b.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true })); a.dispatchEvent(new DragEvent('dragend', { dataTransfer: dt, bubbles: true })); });
+    await page.waitForTimeout(800);
+    const v1 = await page.evaluate(() => ({ order: App.rpt.vis.order, top: document.querySelector('#hlDet .fig .plot.js-plotly-plot').data.filter((d) => d.meta && d.meta.cond).map((d) => d.meta.cond).pop(), stored: JSON.parse(localStorage.getItem('pdat:rpt-vis')).order }));
+    ok(v1.order[0] === 'CIP3' && v1.top === 'CIP3' && v1.stored[0] === 'CIP3', 'drag CIP3 to the front → it is drawn on top of every live chart, order persisted');
+    await page.evaluate(() => document.querySelector('.cchip[data-cond=CIP2] .dot').click()); await page.waitForTimeout(300);
+    ok(await page.evaluate(() => !!document.querySelector('.cpop') && document.querySelectorAll('.cpop .sw').length >= 8 && !!document.querySelector('.cpop .cp-hex') && !!document.querySelector('.cpop input[type=color]')), 'colour popover: swatches + hex field + native picker');
+    await page.evaluate(() => { const i = document.querySelector('.cpop .cp-hex'); i.value = '#009900'; i.dispatchEvent(new Event('change')); }); await page.waitForTimeout(600);
+    const v2 = await page.evaluate(() => ({ col: App.rpt.vis.colors.CIP2, mk: document.querySelector('#hlDet .fig .plot.js-plotly-plot').data.find((d) => d.meta && d.meta.cond === 'CIP2' && d.marker).marker.color, dot: document.querySelector('.cchip[data-cond=CIP2] .dot').style.background }));
+    ok(v2.col === '#009900' && v2.mk === '#009900' && /0, 153, 0/.test(v2.dot), 'hex entry recolours CIP2 on the chart and the chip');
+    await page.evaluate(() => { const gd = document.querySelector('#hlDet .fig .plot.js-plotly-plot'); const i = gd.data.findIndex((d) => d.meta && d.meta.cond === 'CIP3'); gd.emit('plotly_legendclick', { curveNumber: i, data: gd.data }); }); await page.waitForTimeout(600);
+    const v3 = await page.evaluate(() => { const gd = document.querySelector('#hlDet .fig .plot.js-plotly-plot'); return { hi: [...App.rpt.vis.hi], dim: gd.data.filter((d) => d.meta && d.meta.cond && d.meta.cond !== 'CIP3').every((d) => d.opacity < 0.2), full: gd.data.filter((d) => d.meta && d.meta.cond === 'CIP3').every((d) => d.opacity === 1), hidden: gd.data.some((d) => d.visible === 'legendonly') }; });
+    ok(v3.hi.join() === 'CIP3' && v3.dim && v3.full && !v3.hidden, 'legend click = highlight CIP3 (others dimmed, nothing hidden)');
+    await page.evaluate(() => { const gd = document.querySelector('#hlDet .fig .plot.js-plotly-plot'); gd.emit('plotly_legenddoubleclick', {}); }); await page.waitForTimeout(500);
+    ok(await page.evaluate(() => App.rpt.vis.hi.size === 0 && document.querySelector('#hlDet .fig .plot.js-plotly-plot').data.every((d) => !d.meta || !d.meta.cond || d.opacity === 1)), 'legend double-click clears the highlight');
+    const tms = await page.evaluate(() => { const t0 = performance.now(); App.rptUI.applyVis(); return Math.round(performance.now() - t0); });
+    ok(tms < 1500, `live restyle of the visible page stays responsive (${tms} ms)`);
   });
   await run(path.join(SD, 'variants', 'E_single_cond.xlsx'), async (page, st) => {
     ok(st.tab === 'tab-setup' && !st.hasRes, `single condition → no fake report, asks in setup (${st.msg.trim()})`);

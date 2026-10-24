@@ -11,6 +11,7 @@ BEOL 後段製程 BSL vs CIP 的固定流程分析工具。這個專案資料夾
 | 資料層 | ✅ v2.4 | 「＋ 連結資料」把機台履歷、yield 等第二個檔案以 wafer id 連進來；顯示配對率；長表自動轉寬表 |
 | 疑似因子 | ✅ v2.3 | 異常 item 自動掃描資料中的機台／chamber 等欄位（Kruskal–Wallis、BH 校正、混淆偵測、ΔK） |
 | 引導式檢查＋機台分析 | ✅ v2.5 | 每條建議檢查帶狀態與一鍵動作；機台分析視窗：run 貨比例、box plot、自訂組合分組 |
+| 條件圖層／顏色／凸顯 | ✅ v3.4 | Condition 列拖曳排圖層、色點換色（色票／色碼／選色器）、圖例單點凸顯；所有圖即時同步 |
 | PPT 公版＋機台層別 | ✅ v3.3 | 工程簡報公版（紅標題、藍字摘要、K 小表、2×2／3×3、結論頁）；機台欄依層別；圖更清楚；產品內無說明文字 |
 | 前處理分頁＋判準一致 | ✅ v3.2 | 單位／重複 wafer／極端值預警與一鍵處置；卡片拿掉；灰格 ○；機台混淆針對 CIP；HL 合併；結論文字去重；多種日期格式 |
 | 檢查視窗自訂＋trend X 軸 | ✅ v3.1 | 機台列 🔍 開機台分析；檢查視窗可選分組、條件、X／Y；trend 預設 X = wafer 順序，可改排序欄／欄位值 |
@@ -55,7 +56,7 @@ python make_BEOL_Analysis.py --no-samples     # 不產生範例資料
 
 ## 資料夾內容
 - `AGENTS.md`：接手文件（需求、判斷規則、架構、測試、待辦），給 AI agent 或新同事接續開發時閱讀。
-- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v3.3）。
+- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v3.5）。
 - `src/`：原始碼。
   - `src/report/rules_base.js`：診斷知識庫（資料）；`src/report/rules.js`：知識庫程式。
   - `src/report/engine.js`：計算。
