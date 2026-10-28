@@ -8,7 +8,7 @@
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
     hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' } });
-  App.VERSION = '3.5';
+  App.VERSION = '3.6';
   /** 知識庫建議開關（預設關）：關 = 建議檢查只列資料能互相對照的 item（同層／鄰層 inline、WAT、yield、機台），不給物理原因；開 = 加上知識庫的檢查與機制 */
   S.kbOn = !!App.store.get('rpt-kb-on', false);
   const $ = (id) => document.getElementById(id);
@@ -400,6 +400,8 @@
         <div class="frow"><label>Wafer ID *</label><select id="sWafer">${opt(text, c.waferCol)}</select></div>
         <div class="frow"><label>日期</label><select id="sDate">${opt(dates, c.dateCol, '（無）')}</select></div>
         <div class="frow"><label>分組欄</label><select id="sGroup">${opt(groupCands(), c.groupCol, '（不分組）')}</select></div>
+        ${(() => { const cand = E.toolCandidates(S.ds, c); if (!cand.length) return ''; const on = new Set(Array.isArray(c.toolCols) ? c.toolCols : cand.filter((x) => x.auto === 'tool').map((x) => x.name));
+          return `<div class="frow"><label title="勾選的欄位才會進機台分析與建議檢查的機台列；Part／Lot／備註這類欄預設不勾">機台欄</label><div class="toolcols">${cand.map((x) => `<label class="tc ${on.has(x.name) ? 'on' : ''}"><input type="checkbox" data-tool="${esc(x.name)}" ${on.has(x.name) ? 'checked' : ''}> ${esc(x.name)} <span class="muted small">${x.levels}</span>${x.auto === 'tool' ? '<span class="tag">自動</span>' : ''}</label>`).join('')}</div></div>`; })()}
 
       </div>
       <div class="sec"><h3><em>2</em>比較條件</h3>
@@ -425,6 +427,7 @@
     host.querySelectorAll('[data-grain]').forEach((b) => (b.onclick = () => { S.grain = b.dataset.grain; applyGrain(); renderSetup(); }));
     $('sWafer').onchange = (e) => { c.waferCol = e.target.value; S.siteLevel = E.dupRatio(S.dsRaw, c.waferCol) > 1.5; applyGrain(); renderSetup(); };
     $('sDate').onchange = (e) => { c.dateCol = e.target.value || null; };
+    host.querySelectorAll('[data-tool]').forEach((x) => (x.onchange = () => { const cand = E.toolCandidates(S.ds, c); const cur = new Set(Array.isArray(c.toolCols) ? c.toolCols : cand.filter((q) => q.auto === 'tool').map((q) => q.name)); if (x.checked) cur.add(x.dataset.tool); else cur.delete(x.dataset.tool); c.toolCols = [...cur]; renderSetup(); }));
     $('sGroup').onchange = (e) => { c.groupCol = e.target.value || ''; };
     $('sCond').onchange = (e) => { c.condCol = e.target.value || null; E.setCond(c, S.ds); renderSetup(); };
     $('sBase').onchange = (e) => { c.baseline = e.target.value; c.cips = Object.keys(c.condCounts).filter((v) => v !== c.baseline); renderSetup(); };
@@ -1608,11 +1611,17 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     const bullets = (s, items, y, h) => s.addText(items.flatMap((runs, i) => [{ text: '● ', options: { color: RED, fontSize: 9, bold: true } }, ...runs.map((q) => ({ text: q.t, options: { color: q.c || INK, bold: true, fontSize: 13, breakLine: !!q.br } })), ...(i < items.length - 1 ? [{ text: '', options: { breakLine: true } }] : [])]),
       { x: 0.7, y, w: SW - 1.4, h: h || 0.32 * items.length + 0.1, fontFace: FONT, margin: 0, valign: 'top', paraSpaceAfter: 4, fit: 'shrink' });
     /** K mini-table: one row per condition, name in condition colour, value in light colour */
-    const kTable = (s, x, y, rows, w = 1.6, fs = 10, rowH = 0.27) => {
+    /** rough text width in inches (Arial-ish): CJK 1.0 em, latin/digits 0.58 em */
+    const tw = (t, fs) => [...String(t || '')].reduce((a, ch) => a + (/[\u3000-\u9fff\uff00-\uffef]/.test(ch) ? 1 : 0.7), 0) * fs / 72;
+    /** K table width that fits its longest name + value (never narrower than the requested width) */
+    const kWidth = (rows, w, fs) => Math.max(w, 0.22 + Math.max(...rows.map((q) => tw(q.name, fs) + tw(q.val, fs) + 0.3)));
+    const kTable = (s, x, y, rows, w = 1.6, fs = 10, rowH = 0.27, fixed = false) => {
+      if (!fixed) w = kWidth(rows, w, fs);
+      const nameW = Math.max(...rows.map((q) => tw(q.name, fs))) + 0.1, valW = w - nameW - 0.08;
       rows.forEach((q, i) => {
         s.addShape(pptx.ShapeType.rect, { x, y: y + i * rowH, w, h: rowH, fill: { color: 'FFFFFF' }, line: { color: LINE, width: 0.75 } });
-        tb(s, q.name, { x: x + 0.04, y: y + i * rowH, w: w * 0.4, h: rowH, fontSize: fs, bold: true, color: q.color, valign: 'middle', fontFace: 'Arial', fit: 'shrink' });
-        tb(s, q.val, { x: x + w * 0.4, y: y + i * rowH, w: w * 0.6 - 0.04, h: rowH, fontSize: fs, bold: true, color: q.vcolor || q.color, valign: 'middle', align: 'right', fontFace: 'Arial', fit: 'shrink' });
+        tb(s, q.name, { x: x + 0.04, y: y + i * rowH, w: nameW, h: rowH, fontSize: fs, bold: true, color: q.color, valign: 'middle', fontFace: 'Arial', fit: 'shrink' });
+        tb(s, q.val, { x: x + 0.04 + nameW, y: y + i * rowH, w: valW, h: rowH, fontSize: fs, bold: true, color: q.vcolor || q.color, valign: 'middle', align: 'right', fontFace: 'Arial', fit: 'shrink' });
       });
       return rows.length * rowH;
     };
@@ -1650,7 +1659,6 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       bullets(s, items, 1.1, 3.6);
       section(s, '條件與顏色', 0.6, 5.0, 6);
       kTable(s, 0.6, 5.4, [{ name: c.baseline, val: `BSL (${cipN(c.baseline)})`, color: cipHex(c.baseline) }, ...c.cips.map((p) => ({ name: p, val: `CIP (${cipN(p)})`, color: cipHex(p) }))], 2.6, 11, Math.min(0.27, 1.6 / (c.cips.length + 1)));
-      tb(s, `${S.file}${c.groupCol ? `　分組 ${c.groupCol}` : ''}`, { x: 3.6, y: 5.4, w: SW - 4.2, h: 0.4, fontSize: 11, color: MUTED });
     }
     for (const m of mods) {
       const its = r.items.filter((i) => i.kind === m);
@@ -1725,16 +1733,19 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       for (const f of picked.slice(0, 12)) {
         const x = f.cell, g = x.group, p = x.cip, it = x.item;
         const m1 = mainFig(f, 300), m2 = partnerFig(f, 300);
-        const a = await pptFig(m1.fig, 1050, 400, 20, 2.2), b = m2 ? await pptFig(m2.fig, 1050, 400, 20, 2.2) : null;
+        const kr1 = kRows(it.name, g), kw1 = kWidth(kr1, 1.6, 10);
+        const figH0 = m2 ? 2.1 : 4.4, rightW = 4.3, figW0 = Math.min(figH0 * 1050 / 400, SW - 0.6 - 0.6 - kw1 - 0.1 - 0.4 - rightW - 0.6);
+        const ph = figH0 > 2.5 ? 560 : 400, pw = Math.round(ph * figW0 / figH0);   // PNG drawn at the box's own aspect → never stretched
+        const a = await pptFig(m1.fig, pw, ph, 20, 2.2), b = m2 ? await pptFig(m2.fig, pw, ph, 20, 2.2) : null;
         const s = frame(hlTitle(f));
         const oks = okRows(f);
         bullets(s, [
           [{ t: `${hlTitle(f)}，${numLine(f)}`, c: INK }],
           [oks.length ? { t: oks.join('；'), c: BLUE } : { t: '同層／鄰層 inline、機台、yield 皆未對上 → 先補資料再判斷', c: MUTED }],
         ], 1.0, 0.75);
-        const top = 1.85, figH = b ? 2.1 : 4.4, figW = Math.min(figH * 1050 / 400, 7.2), kx = 0.6, fx = kx + 1.7;
+        const top = 1.85, figH = figH0, figW = figW0, kx = 0.6, fx = kx + kw1 + 0.1;
         section(s, `${m1.title}${r.groups.length > 1 ? ` ｜ ${g}` : ''}`, kx, top, fx + figW - kx);
-        kTable(s, kx, top + 0.45, kRows(it.name, g), 1.6, 10, Math.min(0.27, (figH - 0.15) / (c.cips.length + 1)));
+        kTable(s, kx, top + 0.45, kr1, 1.6, 10, Math.min(0.27, (figH - 0.15) / (c.cips.length + 1)));
         s.addImage({ data: a, x: fx, y: top + 0.35, w: figW, h: figH });
         if (b) {
           const y2 = top + 0.35 + figH + 0.25;
@@ -1772,14 +1783,20 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
           for (let k = 0; k < chunk.length; k++) {
             const { it, g } = chunk[k], x0 = 0.6 + (k % cols) * (cw + gap), y0 = top + Math.floor(k / cols) * (ch + gap);
             tb(s, `${short(it.name)}${chunk.some((q) => q.g !== g) || (c.groupCol && list.some((q) => q.g !== chunk[0].g)) ? ` ｜ ${g}` : ''}${unit(it.name) ? `（${unit(it.name)}）` : ''}${it.metric === 'fold' ? '・log' : it.metric === 'rate' ? `・固定值 ${f4(it.target)}` : ''}`, { x: x0, y: y0, w: cw, h: 0.26, fontSize: big ? 12 : 10.5, bold: true, color: INK, fontFace: 'Arial', fit: 'shrink' });
-            const kr = kRows(it.name, g), rh = Math.min(0.27, (ch - 0.36) / kr.length);
-            kTable(s, x0, y0 + 0.3, kr, kw, rh < 0.22 ? fs - 1.5 : fs, rh);
+            // K table: fit long condition names by (1) widening up to half the cell, (2) dropping the pcs suffix, (3) shrinking the font — never overlap the chart
+            const rh = Math.min(0.27, (ch - 0.36) / kRows(it.name, g).length), maxW = cw * 0.5;
+            let kfs = rh < 0.22 ? fs - 1.5 : fs, kr = kRows(it.name, g), kwa = kWidth(kr, kw, kfs);
+            if (kwa > maxW) { kr = kRows(it.name, g, false); kwa = kWidth(kr, kw, kfs); }
+            while (kwa > maxW && kfs > 7) { kfs -= 0.5; kwa = kWidth(kr, kw, kfs); }
+            kwa = Math.min(kwa, maxW);
+            kTable(s, x0, y0 + 0.3, kr, kwa, kfs, rh, true);
             const fig = trendFig(it.name, g, 300, { mini: true }); fig.layout.xaxis.title = null;
-            const iw0 = cw - kw - 0.1, ih0 = ch - 0.3;
-            const pw = big ? Math.round(640 * Math.max(1, iw0 / 4.3)) : 520, ph = big ? 350 : 290;   // wider PNG when the cell is wide so the image fills it
+            const iw0 = cw - kwa - 0.1, ih0 = ch - 0.3;
+            // PNG aspect follows the cell (clamped 1.8–3.2 so a single wide chart is not a thin strip), image placed at that aspect → never stretched
+            const ph = big ? 350 : 290, pw = big ? Math.round(ph * Math.min(Math.max(iw0 / ih0, 1.8), 3.2)) : 520;
             const png = await pptFig(fig, pw, ph, big ? 17 : 16, big ? 2.4 : 2.2);
             const ratio = pw / ph, iw = Math.min(iw0, ih0 * ratio), ih = iw / ratio;
-            s.addImage({ data: png, x: x0 + kw + 0.1, y: y0 + 0.28, w: iw, h: ih });
+            s.addImage({ data: png, x: x0 + kwa + 0.1, y: y0 + 0.28, w: iw, h: ih });
           }
         }
       };

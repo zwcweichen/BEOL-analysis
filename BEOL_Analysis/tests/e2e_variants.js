@@ -186,6 +186,32 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(await page.evaluate(() => App.rpt.vis.hi.size === 0 && document.querySelector('#hlDet .fig .plot.js-plotly-plot').data.every((d) => !d.meta || !d.meta.cond || d.opacity === 1)), 'legend double-click clears the highlight');
     const tms = await page.evaluate(() => { const t0 = performance.now(); App.rptUI.applyVis(); return Math.round(performance.now() - t0); });
     ok(tms < 1500, `live restyle of the visible page stays responsive (${tms} ms)`);
+    // ---- v3.6 column roles: tool-like text columns are 機台 by default, Part / Lot / 備註 are not
+    const roles = await page.evaluate(() => {
+      const E = App.rptEngine; const mk = (names) => ({ columns: names.map((n) => ({ name: n, type: 'text' })), rows: Array.from({ length: 40 }, (_, i) => Object.fromEntries(names.map((n) => [n, `${n[0]}${i % 4}`]))) });
+      const ds = mk(['Part ID', 'Lot ID', 'M2 CMP Tool', 'ILD DEP Chamber', 'V2 Etch EQP', 'Comment', 'Product Tool Owner', 'Wafer', 'Split']);
+      const cand = E.toolCandidates(ds, { waferCol: 'Wafer', lotCol: 'Lot ID', condCol: 'Split', groupCol: '' });
+      return Object.fromEntries(cand.map((c) => [c.name, c.auto]));
+    });
+    ok(roles['Part ID'] === 'other' && roles['Comment'] === 'other' && roles['Product Tool Owner'] === 'other' && !('Lot ID' in roles) && !('Split' in roles), `Part ID / Comment / owner columns are not 機台 (${JSON.stringify(roles)})`);
+    ok(roles['M2 CMP Tool'] === 'tool' && roles['ILD DEP Chamber'] === 'tool' && roles['V2 Etch EQP'] === 'tool', 'Tool / Chamber / EQP columns are 機台 by default');
+    const pick = await page.evaluate(() => {
+      const E = App.rptEngine; const ds = { columns: [{ name: 'Part ID', type: 'text' }, { name: 'M2 CMP Tool', type: 'text' }], rows: Array.from({ length: 20 }, (_, i) => ({ 'Part ID': 'P' + (i % 3), 'M2 CMP Tool': 'T' + (i % 2) })) };
+      return { auto: E.factorColumns(ds, { toolCols: null }).map((c) => c.name), user: E.factorColumns(ds, { toolCols: ['Part ID'] }).map((c) => c.name) };
+    });
+    ok(pick.auto.join() === 'M2 CMP Tool' && pick.user.join() === 'Part ID', 'factor columns: auto picks 機台 only; the user\'s 機台欄 choice overrides');
+  });
+  // ---- v3.6 setup page: 機台欄 checklist present, unticking a column removes it from the tool scan
+  await run(path.join(SD, 'variants', 'J_fabrun.xlsx'), async (page, st) => {
+    const t0 = await page.evaluate(() => { document.querySelector('#tabs button[data-tab=setup]').click(); return [...document.querySelectorAll('[data-tool]')].map((x) => ({ n: x.dataset.tool, on: x.checked })); });
+    ok(t0.length >= 1 && t0.some((x) => x.on), `setup block 3 lists 機台欄 candidates (${t0.map((x) => `${x.n}${x.on ? '✓' : ''}`).join(', ')})`);
+    if (t0.some((x) => x.on)) {
+      const first = t0.find((x) => x.on).n;
+      await page.evaluate((n) => { const x = [...document.querySelectorAll('[data-tool]')].find((q) => q.dataset.tool === n); x.checked = false; x.dispatchEvent(new Event('change')); }, first); await page.waitForTimeout(300);
+      const t1 = await page.evaluate(() => ({ cfg: App.rpt.cfg.toolCols, cols: App.rptEngine.factorColumns(App.rpt.ds, App.rpt.cfg).map((c) => c.name) }));
+      ok(Array.isArray(t1.cfg) && !t1.cfg.includes(first) && !t1.cols.includes(first), `unticking「${first}」removes it from the tool scan`);
+    }
+    await page.click('#tabs button[data-tab=report]');
   });
   await run(path.join(SD, 'variants', 'E_single_cond.xlsx'), async (page, st) => {
     ok(st.tab === 'tab-setup' && !st.hasRes, `single condition → no fake report, asks in setup (${st.msg.trim()})`);

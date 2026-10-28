@@ -81,7 +81,7 @@
       cand.find((c) => { const u = uniq(rows, c.name); return u >= 2 && u <= 6 && !/part|product|prod|device|tech/i.test(c.name); }) ||
       cand.find((c) => { const u = uniq(rows, c.name); return u >= 2 && u <= 6; }) || {}).name || null;
     const groupCol = (pick(cand.filter((c) => c.name !== condCol), /part|product|prod|device|tech|^p\d|layer/i, 2, 30) || {}).name || '';
-    const cfg = { waferCol, lotCol, dateCol, groupCol, condCol, baseline: null, cips: [], items: [] };
+    const cfg = { waferCol, lotCol, dateCol, groupCol, condCol, baseline: null, cips: [], items: [], toolCols: null };
     E.setCond(cfg, ds);
     cfg.items = cols.filter((c) => c.type === 'number' && !c.count && c.role !== 'x' && c.role !== 'y' && uniq(rows, c.name) > 1)
       .filter((c) => !/^(site|x|y|r \(mm\)|slot|wafer|lot)$/i.test(c.name.trim()))
@@ -382,7 +382,7 @@
    */
   E.collapseLinked = (ds, waferCol) => {
     const stepCol = ds.columns.find((c) => c.type === 'text' && c.name !== waferCol && /step|stage|station|oper|站點|站別|製程/i.test(c.name));
-    const toolCols = ds.columns.filter((c) => c.type === 'text' && c.name !== waferCol && c !== stepCol && /tool|eqp|equip|chamber|ch\b|machine|機台|腔/i.test(c.name));
+    const toolCols = ds.columns.filter((c) => c.type === 'text' && c.name !== waferCol && c !== stepCol && E.TOOL_RX.test(c.name) && !E.NOT_TOOL_RX.test(c.name.replace(E.TOOL_RX, '')));
     const timeCol = ds.columns.find((c) => c.type === 'datetime');
     const dup = E.dupRatio(ds, waferCol) > 1.05;
     const rows = ds.rows.slice();
@@ -519,9 +519,23 @@
     return out;
   };
   /** categorical columns usable as factors (tool, chamber, route…): text, not key / condition / group / time columns */
-  E.factorColumns = (ds, cfg) => {
+  // v3.6 column roles for text columns: 機台 (tool / chamber / equipment) vs 其他 (part id, lot, comment …)
+  E.TOOL_RX = /tool|eqp|equip|chamber|\bch\b|_ch\d*|chb|machine|machin|station|stn|recipe|\brcp\b|track|scanner|reactor|platen|head|slot|機台|機臺|腔|站點|站別|設備/i;
+  E.NOT_TOOL_RX = /part|product|device|lot|wafer|comment|remark|note|desc|owner|customer|備註|說明|產品|型號|批號|條件|condition|split|route|時間|time|date/i;
+  /** text columns that could be a tool factor, with the default role: {name, levels, auto: 'tool'|'other'} */
+  E.toolCandidates = (ds, cfg) => {
     const skip = new Set([cfg.waferCol, cfg.lotCol, cfg.condCol, cfg.groupCol].filter(Boolean));
-    return ds.columns.filter((c) => c.type === 'text' && !skip.has(c.name) && !/時間|time|date/i.test(c.name));
+    return ds.columns.filter((c) => c.type === 'text' && !skip.has(c.name)).map((c) => {
+      const levels = new Set(ds.rows.map((r) => r[c.name]).filter((v) => v != null && v !== '')).size;
+      const auto = levels >= 2 && levels <= 60 && E.TOOL_RX.test(c.name) && !E.NOT_TOOL_RX.test(c.name.replace(E.TOOL_RX, '')) ? 'tool' : 'other';
+      return { name: c.name, levels, auto };
+    });
+  };
+  /** columns used by the tool scan: the user's choice (cfg.toolCols) when set, otherwise the auto-detected 機台 columns */
+  E.factorColumns = (ds, cfg) => {
+    const cand = E.toolCandidates(ds, cfg);
+    const names = Array.isArray(cfg.toolCols) ? cfg.toolCols : cand.filter((c) => c.auto === 'tool').map((c) => c.name);
+    return ds.columns.filter((c) => names.includes(c.name));
   };
 
   /** plain-text summary (for e-mail / chat) for one module */

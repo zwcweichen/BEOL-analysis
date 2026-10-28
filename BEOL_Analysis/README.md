@@ -56,7 +56,7 @@ python make_BEOL_Analysis.py --no-samples     # 不產生範例資料
 
 ## 資料夾內容
 - `AGENTS.md`：接手文件（需求、判斷規則、架構、測試、待辦），給 AI agent 或新同事接續開發時閱讀。
-- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v3.5）。
+- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v3.6）。
 - `src/`：原始碼。
   - `src/report/rules_base.js`：診斷知識庫（資料）；`src/report/rules.js`：知識庫程式。
   - `src/report/engine.js`：計算。

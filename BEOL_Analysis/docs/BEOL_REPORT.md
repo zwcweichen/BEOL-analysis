@@ -258,6 +258,12 @@ BEOL 後段製程（Cu interconnect）固定流程的 BSL vs CIP 比較工具。
 
 檢查視窗的條件膠囊與兩張圖跟著 Condition 列的圖層順序；「共振 trend」改成**上下兩個面板共用 wafer 軸**（上 Y item、下 X item，各自原始值、各條件的點與移動平均），不再用共用 z 軸。全系統偏移量與倍數顯示一位小數（`+1.7σ`、`×3.0`、`×2.4`）。PPT：封面與點燈表頁的摘要只列「組 CIP　item 偏移、item 偏移」；刪除資料期間、分組、燈號說明、橘黃計數；片數只出現在點燈表格子下方的小字與封面條件表；HL 細節與 HL 總表的句子不再帶片數。
 
+## 0.18 v3.6 欄位角色（機台欄）、PPT 長條件名自適應、單圖比例
+
+**欄位角色**：數值欄維持 WAT／Inline／Yield(CP) 三類（設定頁第 4 區）；文字欄新增 **機台／其他** 兩種角色。`E.toolCandidates` 以 `E.TOOL_RX`（tool、eqp、equip、chamber、ch、machine、station、recipe、track、scanner、reactor、platen、head、slot、機台、腔、站點、設備）判定機台欄，並以 `E.NOT_TOOL_RX`（part、product、device、lot、wafer、comment、remark、owner、customer、備註、型號、批號、condition、split、route、time、date）排除；level 數需在 2–60。設定頁第 3 區「機台欄」列出所有文字欄供勾選，勾選結果存 `cfg.toolCols`，機台分析與建議檢查（`E.factorColumns`）只看勾選的欄；未設定時用自動判定。Part ID、Lot、備註不再被當成機台。
+
+**PPT**：K 表寬度依內容估算（`tw`：CJK 1.0 em、英數 0.7 em；`kWidth`），名稱欄／數值欄各自配寬；總覽格內 K 表上限半格寬，放不下時依序去掉片數後綴、縮字到 7pt，`kTable(..., fixed=true)` 不再自動撐寬，絕不蓋到圖。單張總覽圖（1×1／1×2）與 HL 細節圖的 PNG 以版面格子的實際寬高比重畫（限制 1.8–3.2），貼圖同比例，不再拉伸。封面刪除灰色來源檔小字。
+
 ---
 
 ## 1. 流程
