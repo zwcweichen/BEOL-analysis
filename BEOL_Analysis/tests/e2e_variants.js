@@ -28,19 +28,22 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     await page.addInitScript(() => { try { localStorage.setItem('pdat:rpt-kb-on', 'true'); } catch (e) {} });
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(HTML);
+    const tLoad = Date.now();
     await page.setInputFiles('#file', file);
-    await page.waitForFunction(() => App.rpt.cfg, null, { timeout: 30000 }); await page.waitForTimeout(1000);
+    await page.waitForFunction(() => App.rpt.cfg && (App.rpt.res || document.querySelector('#tab-setup.active')), null, { timeout: 120000 }); await page.waitForTimeout(1000);
+    const loadMs = Date.now() - tLoad;
     const st = await page.evaluate(() => {
       const c = App.rpt.cfg, r = App.rpt.res, cell = (it, g, p) => { const n = r.items.find((i) => i.name.startsWith(it)).name; return r.cells[n][g][p]; };
       window.__cell = cell;
       return { tab: document.querySelector('.tab.active').id, msg: document.querySelector('#setup .go')?.innerText || '', cond: c.condCol, base: c.baseline, cips: c.cips, group: c.groupCol,
         items: Object.fromEntries(c.items.map((i) => [i.name, `${i.cat}/${i.kind}/${i.metric}`])), hasRes: !!r };
     });
-    console.log(`\n=== ${path.basename(file)}: cond=${st.cond} BSL=${st.base} CIP=${st.cips} group=${st.group || '-'}`);
+    st.loadMs = loadMs;
+    console.log(`\n=== ${path.basename(file)}: cond=${st.cond} BSL=${st.base} CIP=${st.cips} group=${st.group || '-'} (${loadMs} ms)`);
     await check(page, st);
     if (st.hasRes) {
       const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 200000 }), page.click('#btnPpt')]);
-      ok(/\.pptx$/.test(dl.suggestedFilename()), `PPT export works (${dl.suggestedFilename()})`);
+      ok(/\.pptx$/.test(dl.suggestedFilename()) || dl.suggestedFilename() === 'download', `PPT export works (${dl.suggestedFilename()})`);   // headless Chromium reports 'download' when the name has non-ASCII condition names (A廠／B廠)
     }
     ok(!errors.length, 'no page errors ' + JSON.stringify(errors.slice(0, 3)));
     await ctx.close();
@@ -143,8 +146,8 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     await page.evaluate(() => document.querySelector('[data-scale]').click()); await page.waitForTimeout(900);
     const p1 = await page.evaluate(() => { document.querySelector('#kbOn').click(); const r = App.rpt.res; return { pend: App.rptUI.prepPending(), rs: r.cells.Rs_M3.P1['CIP-B'].k, yl: r.cells.Yield.P1['CIP-B'].k, hl: r.findings.wat.map((f) => f.dx.title), sm: App.rptUI.summary() }; });
     ok(p1.pend.units === 0 && Math.abs(p1.rs) < 3 && Math.abs(p1.yl) < 3 && !p1.hl.some((t) => /Rs_M3/.test(t)), `one-click scale: Rs K ${p1.rs.toFixed(2)}σ, Yield K ${p1.yl.toFixed(2)}σ, Rs no longer an HL`);
-    ok(/CIP 走的機台沒有 BSL 可對照/.test(p1.sm) && !/皆偏/.test(p1.sm), 'tool verdict: CIP-only chambers → 無法分辨, never 皆偏');
-    ok(/○ 鄰層 M3 THK（CIP-B 無資料）/.test(p1.sm) && !/✔ .*M3 THK/.test(p1.sm), 'grey partner cell → ○ 缺資料, not ✔');
+    ok(/機台／chamber/.test(p1.sm) && !/沒有 BSL 可對照|無法分辨|皆偏/.test(p1.sm), 'tool row (v3.8): CIP-only chambers → route only, no comment, never 皆偏');
+    ok(!/鄰層 M3 THK/.test(p1.sm) && !/✔ .*M3 THK/.test(p1.sm), 'KB off → no 鄰層 row (knowledge-base feature), grey partner never ✔');
     ok(/建議檢查（全部 HL 共同）/.test(p1.sm) && /資料品質：CIP-C 在 P2 沒有 wafer/.test(p1.sm) && !/知識庫 base/.test(p1.sm), 'summary: common checks printed once, data quality merged, no KB version line when KB is off');
     await page.evaluate(() => document.querySelector('#kbOn').click());
     await page.evaluate(() => document.querySelector('[data-pexcl]').click()); await page.waitForTimeout(900);
@@ -200,6 +203,45 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
       return { auto: E.factorColumns(ds, { toolCols: null }).map((c) => c.name), user: E.factorColumns(ds, { toolCols: ['Part ID'] }).map((c) => c.name) };
     });
     ok(pick.auto.join() === 'M2 CMP Tool' && pick.user.join() === 'Part ID', 'factor columns: auto picks 機台 only; the user\'s 機台欄 choice overrides');
+  });
+  // ---- v3.7/v3.8 Summary 排排站 + Quantile: four products, A廠 (BSL) vs B廠, 5 inline + 5 WAT
+  await run(path.join(SD, 'variants', 'L_pp5.xlsx'), async (page, st) => {
+    ok(st.base === 'A廠' && st.cips.join() === 'B廠' && st.group === 'Product', `fab condition + product groups detected (${st.base} vs ${st.cips.join()} by ${st.group})`);
+    const lay = await page.evaluate(() => { const f = App.rptUI.stackLayout; const a = f([{ name: 'PA', items: [1, 2, 3, 4, 5] }, { name: 'PB', items: [1, 2, 3, 4, 5] }]); const b = f([{ name: 'PA', items: Array(10).fill(1) }]); const c = f([{ name: 'PA', items: Array(3).fill(1) }, { name: 'PB', items: Array(12).fill(1) }]); return { a: [a.cols.length, a.rows, a.pages.length], b: [b.cols.length, b.rows, b.pages.length, b.cols[0].part], c: [c.cols.length, c.rows, c.pages.length] }; });
+    ok(lay.a.join() === '2,5,1' && lay.b.join() === '2,5,1,1/2' && lay.c.join() === '3,6,2', `stack layout: 5+5 → one page of two columns; 10 → split 5+5; 3+12 → 3 columns (6 rows) on 2 pages (${JSON.stringify(lay)})`);
+    const ord = await page.evaluate(() => ({ inl: App.rptUI.sortLayer(App.rpt.res.items.filter((i) => i.kind === 'inline')).map((i) => i.name), wat: App.rptUI.sortLayer(App.rpt.res.items.filter((i) => i.kind === 'wat')).map((i) => i.name) }));
+    ok(ord.inl.join() === 'M1 CD AEI,M1 THK,M2 CD AEI,M2 THK,V1 CD' && ord.wat.join() === 'Rs_M1,LK_M1,Rs_M2,Rc_V1,Rc_V2', `layer order (Mx, Vx−1): ${ord.inl.join(' → ')} / ${ord.wat.join(' → ')}`);
+    const q = await page.evaluate(() => { const Q = App.rptUI.qStats('Rc_V1', 'PD'); const b = Q.series['A廠'], c = Q.series['B廠']; return { nb: b.n, nc: c.n, pts: b.x.length, mono: b.z.every((v, i) => !i || v >= b.z[i - 1]) && b.x.every((v, i) => !i || v >= b.x[i - 1]), p50b: b.p50, p50c: c.p50, z0: App.rptEngine.probit(0.5), z99: App.rptEngine.probit(0.99) }; });
+    ok(q.nb === 1775 && q.nc === 600 && q.pts === 600 && q.mono && q.p50c > q.p50b && Math.abs(q.z0) < 1e-9 && Math.abs(q.z99 - 2.3263) < 1e-3, `quantile: BSL ${q.nb} wafers thinned to ${q.pts} plotted points, sorted & monotone, P50 ${q.p50b} → ${q.p50c}; Φ⁻¹(0.5)=0, Φ⁻¹(0.99)=${q.z99.toFixed(4)}`);
+    await page.click('#tabs button[data-tab=quant]'); await page.waitForTimeout(1000);
+    await page.evaluate(() => document.querySelector('[data-qmode=all]').click());
+    let ui; for (let k = 0; k < 40; k++) { await page.waitForTimeout(250); ui = await page.evaluate(() => ({ cells: document.querySelectorAll('#quant .mc').length, plots: document.querySelectorAll('#quant .js-plotly-plot').length, orange: document.querySelectorAll('#quant .mc.orange').length, ticks: [...document.querySelectorAll('#quant .js-plotly-plot .ytick text')].map((t) => t.textContent).slice(0, 5) })); if (ui.plots >= 20) break; }
+    ok(ui.cells === 20 && ui.plots >= 20 && ui.orange >= 2 && ui.ticks.includes('0.5') && ui.ticks.includes('0.99'), `Quantile tab: 5 items × 4 groups drawn through the render queue (${ui.plots}), probability ticks ${ui.ticks.join('/')}, orange cells ${ui.orange}`);
+    await page.click('#tabs button[data-tab=report]');
+    const ck = await page.evaluate(() => { App.rpt.kbOn = false; const f = App.rpt.res.findings.wat.find((x) => x.cell.item.name === 'Rc_V1'); const rows = App.rptUI.checkRows(f); App.rpt.kbOn = true; return rows.map((r) => `${r.st}:${r.text}${r.note ? ' [' + r.note + ']' : ''}`); });
+    ok(ck.some((t) => /同層 V1 CD/.test(t)) && !ck.some((t) => /鄰層/.test(t)) && ck.some((t) => /機台／chamber/.test(t) && !/沒有 BSL|無法分辨/.test(t)), `KB-off checks for Rc_V1: same-layer via CD, no 鄰層 row, tool row without a comment (${ck.join(' | ')})`);
+    const pp = await page.evaluate(async () => { const p = await App.rptUI.buildPptStack(); return { n: p.slides.length }; });
+    ok(pp.n === 12, `Summary 排排站 deck: cover + (lights 1–2 + 2 trend + 2 quantile pages) × 2 modules = ${pp.n} pages`);
+  });
+  await run(path.join(SD, 'variants', 'M_pp10.xlsx'), async (page, st) => {
+    const pp = await page.evaluate(async () => { const p = await App.rptUI.buildPptStack(); return { n: p.slides.length }; });
+    ok(pp.n === 20, `10 + 10 items × 4 groups → lights (1 + 2) + every group its own page ×2 kinds: ${pp.n} pages`);
+    const hl = await page.evaluate(async () => { const p = await App.rptUI.buildPpt(); const titles = p.slides.map((s) => (s._slideObjects.find((o) => o._type === 'text' && o.options && o.options.color === 'C00000') || { text: [{ text: '' }] }).text.map((t) => t.text).join('')); return { n: p.slides.length, titles }; });
+    const lights = hl.titles.filter((t) => /點燈表|變異比較/.test(t));
+    ok(lights.length === 3 && !lights.some((t) => /\d+\/\d+/.test(t)), `10-item lights tables fit one page each (pcs moved to the header, W2W-only rows single line): ${lights.join(' / ')}`);
+    // Rs without a same-layer CD column in the data → the KB-off list still names "M3 metal CD" as a missing-data row
+    const ck = await page.evaluate(() => { App.rpt.kbOn = false; const f = App.rpt.res.findings.wat.find((x) => x.cell.item.name === 'Rs_M1'); const o = App.rptUI.checkRows(f).map((r) => `${r.st}:${r.text}`); App.rpt.kbOn = true; return o; });
+    ok(ck.some((t) => /同層 M1 CD AEI/.test(t)) && ck.some((t) => /同層 M1 THK/.test(t)), `Rs_M1 KB-off checks name same-layer CD and THK (${ck.join(' | ')})`);
+  });
+  // ---- v3.8 scale: 31k rows, 10 + 10 items + SPA fixed-value item, four products
+  await run(path.join(SD, 'variants', 'N_pp30k.xlsx'), async (page, st) => {
+    ok(st.loadMs < 30000, `31k rows load → report in ${(st.loadMs / 1000).toFixed(1)} s (worker parse + staged progress bar)`);
+    const spa = await page.evaluate(() => { const it = App.rpt.cfg.items.find((i) => /^SPA/i.test(i.name)); const cell = App.rpt.res.cells['SPA_M2']; return { metric: it && it.metric, target: it && it.target, pc: cell && cell.PC['B廠'].level, pb: cell && cell.PB['B廠'].level, inLights: !!document.querySelector('#report .lt') && document.querySelector('#report').innerText.includes('SPA_M2') }; });
+    ok(spa.metric === 'rate' && spa.target === 7 && spa.pc === 'yellow' && spa.pb === 'green' && spa.inLights, `SPA fixed-value item (target ${spa.target}) is in the lights table: PC ${spa.pc}, PB ${spa.pb}`);
+    const a = Date.now(); await page.click('#tabs button[data-tab=trend]'); await page.evaluate(() => document.querySelector('[data-mode=all]').click());
+    let first = null, n0 = 0; for (let k = 0; k < 300; k++) { await page.waitForTimeout(100); const n = await page.evaluate(() => document.querySelectorAll('#trend .js-plotly-plot').length); if (n && first == null) first = Date.now() - a; if (n === n0 && n > 0 && k > 8) break; n0 = n; }
+    ok(first != null && first < 3000 && n0 >= 16, `trend matrix on 31k rows: first chart in ${first} ms, ${n0} charts in ${Date.now() - a} ms (queued one per task)`);
+    await page.click('#tabs button[data-tab=report]');
   });
   // ---- v3.6 setup page: 機台欄 checklist present, unticking a column removes it from the tool scan
   await run(path.join(SD, 'variants', 'J_fabrun.xlsx'), async (page, st) => {

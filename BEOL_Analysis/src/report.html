@@ -18,7 +18,7 @@
   <button class="btn" id="btnCopy" disabled title="把結論文字複製到剪貼簿，方便貼到 mail／chat">複製結論</button>
   <button class="btn" id="btnPrint" disabled>列印／PDF</button>
   <button class="btn" id="btnHtml" disabled title="One-page HTML，圖嵌入，可直接寄送">匯出 HTML</button>
-  <select id="pptDetail" class="sm" title="PPT 的 HL 細節頁：自動 = 橘燈（HL ≤ 4 時全部）；HL 總表一律包含全部 HL"><option value="auto">HL 細節：自動</option><option value="orange">只橘燈</option><option value="all">全部 HL</option></select><button class="btn primary" id="btnPpt" disabled title="PowerPoint：封面、點燈表、HL 總表、HL 細節、總覽 trend">匯出 PPT</button>
+  <select id="pptDetail" class="sm" title="PPT 的 HL 細節頁：自動 = 橘燈（HL ≤ 4 時全部）；HL 總表一律包含全部 HL"><option value="auto">HL 細節：自動</option><option value="orange">只橘燈</option><option value="all">全部 HL</option></select><button class="btn primary" id="btnPpt" disabled title="PowerPoint：封面、點燈表、HL 總表、HL 細節、總覽 trend">匯出 PPT（戰報）</button><button class="btn" id="btnPptStack" disabled title="PowerPoint：點燈表＋每個 item 一列 trend 排排站（Inline／WAT／Yield）＋ Quantile 排排站">匯出 PPT（排排站）</button>
 </header>
 <div class="legend-bar" id="legendBar"></div>
 <nav class="tabs" id="tabs">
@@ -27,7 +27,8 @@
   <button data-tab="report" disabled>① 戰報總覽</button>
   <button data-tab="trend" disabled>② Trend 矩陣</button>
   <button data-tab="corr" disabled>③ Correlation</button>
-  <button data-tab="kb">④ 知識庫</button>
+  <button data-tab="quant" disabled>④ Quantile</button>
+  <button data-tab="kb">⑤ 知識庫</button>
 </nav>
 <main>
   <section id="tab-setup" class="tab active"><div id="setup"></div></section>
@@ -35,6 +36,7 @@
   <section id="tab-report" class="tab"><div id="report" class="report"></div></section>
   <section id="tab-trend" class="tab"><div id="trend"></div></section>
   <section id="tab-corr" class="tab"><div id="corr"></div></section>
+  <section id="tab-quant" class="tab"><div id="quant"></div></section>
   <section id="tab-kb" class="tab"><div id="kb"></div></section>
 </main>
 <div class="busy" id="busy" hidden></div>

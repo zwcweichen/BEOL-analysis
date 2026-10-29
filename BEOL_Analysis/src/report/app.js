@@ -7,8 +7,8 @@
   const App = window.App;
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
-    hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' } });
-  App.VERSION = '3.6';
+    hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' }, qt: { mode: 'abn' } });
+  App.VERSION = '3.8';
   /** 知識庫建議開關（預設關）：關 = 建議檢查只列資料能互相對照的 item（同層／鄰層 inline、WAT、yield、機台），不給物理原因；開 = 加上知識庫的檢查與機制 */
   S.kbOn = !!App.store.get('rpt-kb-on', false);
   const $ = (id) => document.getElementById(id);
@@ -66,6 +66,7 @@
     $('mods').addEventListener('click', (e) => { const b = e.target.closest('button[data-mod]'); if (b && !b.disabled) setMode(b.dataset.mod); });
     $('btnHtml').addEventListener('click', exportHtml);
     $('btnPpt').addEventListener('click', exportPpt);
+    $('btnPptStack').addEventListener('click', exportPptStack);
     if ($('pptDetail')) $('pptDetail').onchange = (e) => { S.pptDetail = e.target.value; };
     $('btnPrint').addEventListener('click', printReport);
     $('btnCopy').addEventListener('click', copySummary);
@@ -91,6 +92,7 @@
     if (t === 'report' && S.dirty?.report) renderReport();
     if (t === 'trend' && S.dirty?.trend) renderTrend();
     if (t === 'corr' && S.dirty?.corr) renderCorr();
+    if (t === 'quant' && S.dirty?.qt) renderQuantile();
     if (t === 'kb') renderKB();
     if (t === 'prep') renderPrep();
   }
@@ -109,7 +111,7 @@
     if (m === S.mode) return;
     S.mode = m; S.trend.mode = 'abn';
     renderMods();
-    if (S.res) { S.dirty = { report: true, trend: true, corr: true }; renderLegend(); showTab(current === 'setup' ? 'report' : current); }
+    if (S.res) { S.dirty = { report: true, trend: true, corr: true, qt: true }; renderLegend(); showTab(current === 'setup' ? 'report' : current); }
   }
 
 
@@ -164,10 +166,22 @@
   const linkChip = () => (S.links.length ? `<span class="chip lnk" data-golink title="資料層：點一下看連結狀況">資料層：主檔＋${S.links.length} 個連結檔（配對 ${S.links.map((l) => `${Math.round(l.rate * 100)}%`).join('、')}）</span>` : '');
 
   // ================================================================ load
+  // v3.8 import progress: the busy pill becomes a bar with stages (讀取 → 解析 → 整理 → 判斷欄位 → 統計 → 繪圖) so a 30k-row file never looks stuck
+  const STAGES = { read: '讀取檔案', parse: '解析試算表', table: '整理資料表', config: '判斷欄位', stats: '統計計算', draw: '畫戰報' };
+  const STAGE_ORDER = ['read', 'parse', 'table', 'config', 'stats', 'draw'];
+  const paint = () => new Promise((res) => setTimeout(res, 20));
+  async function progress(stage, pct, file) {
+    const i = STAGE_ORDER.indexOf(stage), base = i / STAGE_ORDER.length, span = 1 / STAGE_ORDER.length;
+    const p = pct == null ? base + span * 0.5 : base + span * Math.min(1, pct);
+    const b = $('busy'); b.hidden = false; b.classList.add('prog');
+    b.innerHTML = `<div class="pl">${esc(STAGES[stage] || stage)}${file ? `　<span class="muted2">${esc(file.name)}${file.size ? ` · ${(file.size / 1048576).toFixed(1)} MB` : ''}</span>` : ''}<span class="pp">${i + 1}/${STAGE_ORDER.length}</span></div><div class="pb"><i style="width:${Math.round(p * 100)}%" class="${pct == null ? 'ind' : ''}"></i></div>`;
+    await paint();
+  }
   async function loadFile(file, sheet) {
     try {
       const t0 = performance.now();
-      const { src, ds, siteDs } = await E.load(file, sheet);
+      const { src, ds, siteDs } = await E.load(file, sheet, (st, pct) => progress(st, pct, file));
+      await progress('config', null, file);
       S.file = file.name; S._file = file; S.src = src; S.dsRaw = ds; S.siteDs = siteDs; S.links = []; S.prep = E.prepDefault(); S.prepItem = null;
       $('btnLink').disabled = false;
       S.cfg = E.autoConfig(ds);
@@ -180,9 +194,10 @@
       $('fileChip').classList.add('ok');
       App.toast(`已讀取 ${file.name}`, 'ok');
       renderMods();
-      if (validMsg()) { renderSetup(); showTab('setup'); App.toast('部分欄位需要確認，請檢查設定', 'err'); }
-      else generate();
-    } catch (e) { console.error(e); App.toast(`讀取失敗：${e.message}`, 'err'); }
+      if (validMsg()) { busy(''); renderSetup(); showTab('setup'); App.toast('部分欄位需要確認，請檢查設定', 'err'); }
+      else { await progress('stats', null, file); await generate(); }
+      console.info(`load ${file.name}: ${Math.round(performance.now() - t0)} ms`);
+    } catch (e) { console.error(e); App.toast(`讀取失敗：${e.message}`, 'err'); } finally { busy(''); $('busy').classList.remove('prog'); }
   }
   function applyGrain() { S.dsBase = S.siteLevel && S.grain === 'wafer' ? E.toWafer(S.dsRaw, S.cfg.waferCol) : S.dsRaw; applyPrep(); }
   // ================================================================ v3.2 data pre-processing (duplicates / unit scale / extreme outliers) — system warns, user confirms
@@ -274,21 +289,23 @@
     if (!c.items.some((i) => i.on)) return '請至少勾選一個量測 item';
     return '';
   }
-  function generate() {
+  async function generate() {
     const m = validMsg(); if (m) { App.toast(m, 'err'); renderSetup(); showTab('setup'); return; }
     const t0 = performance.now();
     if (!hasKind(S.mode)) S.mode = E.KINDS.find(hasKind) || 'wat';
     visInit();
     applyPrep();
     S.res = E.compute(S.ds, S.cfg, S.grain === 'wafer' ? S.siteDs : []);
-    S.dirty = { report: true, trend: true, corr: true };
+    figCache.clear();
+    S.dirty = { report: true, trend: true, corr: true, qt: true };
     S.corr.y = null; S.hl = { wat: 0, inline: 0 }; S.hlf = { lv: 'all', group: '' }; S.rowf = { abn: false, layers: [] };
     closeAllWins();
-    ['report', 'trend', 'corr'].forEach((t) => (document.querySelector(`#tabs button[data-tab=${t}]`).disabled = false));
-    ['btnHtml', 'btnPpt', 'btnPrint', 'btnCopy'].forEach((b) => ($(b).disabled = false));
+    ['report', 'trend', 'corr', 'quant'].forEach((t) => (document.querySelector(`#tabs button[data-tab=${t}]`).disabled = false));
+    ['btnHtml', 'btnPpt', 'btnPptStack', 'btnPrint', 'btnCopy'].forEach((b) => ($(b).disabled = false));
     renderMods(); renderLegend(); renderSetup();
+    if ($('busy').classList.contains('prog')) await progress('draw', null, S._file);
     showTab(current === 'setup' ? 'report' : current);
-    App.toast(`戰報完成：${S.res.items.length} 個 item × ${S.res.groups.length} 組`, 'ok');
+    App.toast(`戰報完成：${S.res.items.length} 個 item × ${S.res.groups.length} 組（${((performance.now() - t0) / 1000).toFixed(1)} s）`, 'ok');
   }
 
   // ================================================================ legend bar (thresholds per module)
@@ -604,11 +621,11 @@
     data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `BSL ${c.baseline}` : `BSL ${c.baseline}（N ${bsl.length}）${it.metric === 'rate' && c0 ? `  異常 ${pct(c0.rateB)}` : ''}`, x: bShow.map((p) => p.x), y: bShow.map((p) => p.y), text: bShow.map((p) => p.w),
       marker: { color: bFail.some(Boolean) ? bFail.map((f) => (f ? '#4b5563' : condColor(c.baseline))) : condColor(c.baseline), size: big ? 6 : mini ? 3.5 : 4.5, opacity: 0.75 }, hovertemplate: '%{text}<br>%{y}<extra>BSL</extra>', meta: bFail.some(Boolean) ? { fail: bFail } : {} }, c.baseline, 'pts'));
     for (const p of c.cips) {
-      const cp = pts.filter((q) => q.c === p);
+      const cpAll = pts.filter((q) => q.c === p), cp = mini ? sample(cpAll, 900) : cpAll;   // v3.8: thumbnails cap CIP points too (stats use every wafer)
       if (!cp.length) continue;
       const cell = r.cells[itemName]?.[group]?.[p];
       const lab = !cell || cell.level === 'na' ? '' : `  ${shiftTxt(cell)}`;
-      data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `${p}${lab}` : `CIP ${p}${lab}（N ${cp.length}）`, x: cp.map((q) => q.x), y: cp.map((q) => q.y), text: cp.map((q) => q.w),
+      data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `${p}${lab}` : `CIP ${p}${lab}（N ${cpAll.length}）`, x: cp.map((q) => q.x), y: cp.map((q) => q.y), text: cp.map((q) => q.w),
         marker: { color: condColor(p), size: cp.map((q) => (isFail(q.y) ? (big ? 11 : 8.5) : big ? 8 : mini ? 5 : 7)), symbol: cp.map((q) => (isFail(q.y) ? 'diamond' : 'circle')),
           line: { width: cp.map((q) => (isFail(q.y) ? 1.4 : 0.8)), color: cp.map((q) => (isFail(q.y) ? '#c2410c' : '#fff')) } },
         hovertemplate: `%{text}<br>%{y}<extra>${esc(p)}</extra>` }, p, 'pts'));
@@ -627,6 +644,58 @@
     if (mini) { L.xaxis.title = null; L.yaxis.title = null; L.margin = { l: 42, r: 6, t: 6, b: 24 }; L.xaxis.tickfont.size = 9; L.yaxis.tickfont.size = 9; L.xaxis.nticks = 4; L.yaxis.nticks = 5; }
     return { data: orderTraces(data), layout: L };
   }
+
+  // ---- v3.8 Normal Quantile plot (JMP Fit Y by X): x = item value, y = normal quantile (probability ticks), one series per condition
+  function qStats(itemName, group) {
+    const r = S.res, c = S.cfg, it = itemOf(itemName);
+    const rows = (r.byG.get(group) || S.ds.rows).filter((x) => num(x[itemName]) != null);
+    return E.quantile(rows, it, c, r.cOf);
+  }
+  function qFig(itemName, group, h = 250, opts = {}) {
+    const c = S.cfg, Q = opts.stats || qStats(itemName, group), mini = opts.mini;
+    const conds = [c.baseline, ...c.cips].filter((cc) => Q.series[cc]); if (!conds.length) return null;
+    const data = [];
+    for (const cc of conds) {
+      const sr = Q.series[cc], isB = cc === c.baseline;
+      data.push(tag({ type: 'scatter', mode: 'lines+markers', name: `${isB ? 'BSL' : 'CIP'} ${cc}（N ${sr.n}）`, x: sr.x, y: sr.z, text: sr.p.map((p) => `${(p * 100).toFixed(p < 0.01 || p > 0.99 ? 2 : 1)}%`),
+        line: { color: condColor(cc), width: mini ? 1.4 : 1.8, shape: 'linear' }, marker: { color: condColor(cc), size: isB ? (mini ? 3.5 : 4.5) : mini ? 5 : 6.5, opacity: isB ? 0.75 : 1, line: { width: isB ? 0 : 0.8, color: '#fff' } },
+        hovertemplate: `%{x}<br>%{text}<extra>${esc(cc)}</extra>` }, cc, 'pts'));
+    }
+    const L = baseLayout(h);
+    L.yaxis.tickmode = 'array'; L.yaxis.tickvals = Q.ticks.map((t) => t.z); L.yaxis.ticktext = Q.ticks.map((t) => String(t.p)); L.yaxis.range = [-3.9, 3.9]; L.yaxis.zeroline = false;
+    L.yaxis.title = { text: 'Normal Quantile', font: { size: 10.5, color: '#667085' } };
+    L.xaxis.title = axTitle(itemName, Q.log ? '，log' : ''); if (Q.log) L.xaxis.type = 'log'; L.xaxis.zeroline = false;
+    if (opts.compact) { L.showlegend = true; L.legend = { orientation: 'h', x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', font: { size: 11 } }; L.margin = { l: 50, r: 8, t: 26, b: 34 }; }
+    if (mini) { L.showlegend = false; L.xaxis.title = null; L.yaxis.title = null; L.margin = { l: 44, r: 6, t: 6, b: 24 }; L.xaxis.tickfont.size = 9; L.yaxis.tickfont.size = 9; L.xaxis.nticks = 5; L.yaxis.tickvals = [-2.326, -1.282, 0, 1.282, 2.326]; L.yaxis.ticktext = ['0.01', '0.1', '0.5', '0.9', '0.99']; }
+    return { data: orderTraces(data), layout: L };
+  }
+  function renderQuantile() {
+    S.dirty.qt = false; resetPlotQ();
+    const r = S.res, c = S.cfg, el = $('quant'), mode = S.mode;
+    el.querySelectorAll('.js-plotly-plot').forEach((p) => Plotly.purge(p));
+    const mine = sortLayer(r.items.filter((i) => i.kind === mode));
+    const abn = mine.filter((it) => isAbnL(itemWorst(it, mode)));
+    const list = S.qt.mode === 'abn' ? abn : mine;
+    const G = r.groups;
+    el.innerHTML = `<div class="ctrl">
+        <span>顯示</span><span class="chips"><span class="chip ${S.qt.mode === 'abn' ? 'on' : ''}" data-qmode="abn">異常與觀察（${abn.length}）</span><span class="chip ${S.qt.mode === 'all' ? 'on' : ''}" data-qmode="all">全部 ${MOD[mode]}（${mine.length}）</span></span>
+      </div>
+      ${list.length ? `<div class="tmx" style="grid-template-columns:150px repeat(${G.length}, minmax(${G.length > 4 ? 200 : 240}px, 1fr))">
+        <div class="th corner">${esc(c.groupCol ? `${c.groupCol} →` : '')}</div>${G.map((g) => `<div class="th">${esc(c.groupCol ? g : `${c.cips.join('、')} vs ${c.baseline}`)}</div>`).join('')}
+        ${list.map((it) => `<div class="rh ${itemWorst(it, mode)}"><b>${esc(short(it.name))}</b><span>${esc(unit(it.name))}</span><span>${esc(RU.byId(it.cat).label.split('（')[0])}${it.metric === 'fold' ? '・log 軸' : ''}</span></div>` +
+          G.map((g) => { const x0 = r.cells[it.name][g];
+            return `<div class="mc ${cellWorst(x0, it.kind)}" data-qitem="${esc(it.name)}" data-qgroup="${esc(g)}" data-item="${esc(it.name)}" data-group="${esc(g)}" data-cip="${esc(c.cips[0])}" title="點擊放大"><div class="mh">${c.cips.map((p) => `<span class="pill ${x0[p].level}">${c.cips.length > 1 ? `${esc(p)} ` : ''}${esc(shiftTxt(x0[p]))}</span>${x0[p].sdRatio != null && x0[p].level !== 'na' ? `<span class="pill ${x0[p].sdLevel || 'na'}">σ ×${x0[p].sdRatio.toFixed(1)}</span>` : ''}`).join('')}</div><div class="plot"></div></div>`; }).join('')).join('')}</div>` : `<div class="empty">目前沒有黃燈或橘燈的 ${MOD[mode]} item。切換到「全部 ${MOD[mode]}」可以看全部 quantile plot。</div>`}`;
+    el.querySelectorAll('[data-qmode]').forEach((x) => (x.onclick = () => { S.qt.mode = x.dataset.qmode; renderQuantile(); }));
+    if (ioP) ioP.disconnect();
+    ioP = new IntersectionObserver((ents) => ents.forEach((en) => {
+      if (!en.isIntersecting) return;
+      const cell = en.target; ioP.unobserve(cell);
+      queuePlot(cell.querySelector('.plot'), () => qFig(cell.dataset.qitem, cell.dataset.qgroup, 165, { mini: true }));
+    }), { rootMargin: '300px' });
+    el.querySelectorAll('.mc').forEach((x) => ioP.observe(x));
+  }
+  let ioP = null;
+  const figCache = new Map();   // v3.8: reserved for per-(item, group) precomputation; cleared on every generate()
 
   function waferInfo() {
     if (S._wInfo && S._wInfo.res === S.res) return S._wInfo.m;
@@ -710,6 +779,18 @@
   }
   /** small charts are static (light, click → floating window); big ones interactive */
   function plotInto(div, fig, stat) { if (fig) Plotly.newPlot(div, fig.data, fig.layout, stat ? { staticPlot: true, responsive: true } : CFG).then((gd) => bindHi(gd)); }
+  /** v3.8 render queue: matrix thumbnails are drawn one per macrotask (visible ones first), so scrolling and clicks stay responsive while 20–40 charts fill in */
+  const plotQ = { q: [], busy: false, gen: 0 };
+  function queuePlot(div, mk) {
+    plotQ.q.push({ div, mk, gen: plotQ.gen });
+    if (!plotQ.busy) drainPlots();
+  }
+  function drainPlots() {
+    const job = plotQ.q.shift(); if (!job) { plotQ.busy = false; return; }
+    plotQ.busy = true;
+    setTimeout(() => { try { if (job.gen === plotQ.gen && job.div.isConnected) plotInto(job.div, job.mk(), true); } catch (e) { console.error(e); } drainPlots(); }, 0);
+  }
+  const resetPlotQ = () => { plotQ.gen++; plotQ.q.length = 0; };
   // ---- v3.4 live condition style: highlight on legend click, restyle colours / reorder layers on every chart currently in the page
   const HI_DIM = 0.12;
   /** legend click = highlight that condition (click again = back); double-click = clear all. Hiding traces is gone. */
@@ -936,8 +1017,11 @@ ${linkChip()}</div>`;
     const byK = (a, b) => Math.abs(b.k ?? 0) - Math.abs(a.k ?? 0);
     if (it.kind === 'wat') {
       same.forEach((r) => out.push(`同層 ${short(r.item.name)}`));
-      if (!same.length) out.push(`${L || '同層'} CD／THK`);
-      adj.sort(byK).slice(0, 2).forEach((r) => out.push(`鄰層 ${short(r.item.name)}`));
+      // expected same-layer inline categories (from the item's pairs: Rs → THK + CD, Rc → via CD …) that the data does not carry → named as 缺資料 rows
+      const have = new Set(same.map((r) => r.item.cat === 'vcd' ? 'cd' : r.item.cat)), pairs = (RU.byId(it.cat).pairs || []).map((p) => (p.cat === 'vcd' ? 'cd' : p.cat));
+      for (const pc of [...new Set(pairs)]) if (!have.has(pc)) out.push(`${L || '同層'} ${pc === 'cd' ? (/^T?V/i.test(L) ? 'via CD' : 'metal CD') : pc === 'thk' ? 'THK' : pc.toUpperCase()}`);
+      if (!same.length && !pairs.length) out.push(`${L || '同層'} CD／THK`);
+      // 鄰層 inline (cross-layer mechanisms) belong to the knowledge base → only listed when it is on
     } else if (it.kind === 'inline') {
       same.forEach((r) => out.push(`同層 ${short(r.item.name)}`));
       if (!same.length) out.push(`${L || '同層'} WAT`);
@@ -1000,7 +1084,7 @@ ${linkChip()}</div>`;
     // tool / chamber / commonality
     if (/機台|chamber|tool|commonality|履歷|eqp|分流|matching/i.test(t)) {
       const fs = factors(f);
-      if (fs.length) { const top = fs[0]; return h('ok', '機台分析', () => openToolWin(it.name, g, cip, top.col), top.hit ? `疑似 ${short(top.col)} = ${top.worst.v}${top.layerRel === 'off' ? `（${top.colLayer} 層機台，非本層）` : ''}` : fs.offOnly ? `已掃 ${fs.map((q) => short(q.col)).join('、')}（非本層），無集中；本層${fs.itemLayer ? ` ${fs.itemLayer}` : ''} 機台資料未提供 → 連結機台履歷` : fs.every((q) => q.confound) ? 'CIP 走的機台沒有 BSL 可對照，無法分辨' : `已掃 ${fs.length} 個欄位，沒有明顯 bad tool`); }
+      if (fs.length) { const top = fs[0]; return h('ok', '機台分析', () => openToolWin(it.name, g, cip, top.col), top.hit ? `疑似 ${short(top.col)} = ${top.worst.v}${top.layerRel === 'off' ? `（${top.colLayer} 層機台，非本層）` : ''}` : fs.offOnly ? `已掃 ${fs.map((q) => short(q.col)).join('、')}（非本層），無集中；本層${fs.itemLayer ? ` ${fs.itemLayer}` : ''} 機台資料未提供 → 連結機台履歷` : fs.every((q) => q.confound) ? '' : `已掃 ${fs.length} 個欄位，沒有明顯 bad tool`); }
       return h('need', '連結機台履歷', () => $('file2').click(), '資料中沒有機台／chamber 欄位');
     }
     // other modules
@@ -1050,7 +1134,7 @@ ${linkChip()}</div>`;
           <div class="tw-v ${isHit ? 'hit' : allBad ? 'warn' : ''}"><b>${esc(verdict)}</b>${mixed ? '　⚠ 部分 level 只在單一條件出現' : ''}${small ? `　<span class="muted">（${small} 個 level 的 CIP 少於 30 片，K 參考即可）</span>` : ''}</div>
           <div class="tw-top">
             <div><div class="ft">Run 貨比例</div><div class="plot" id="twRate"></div></div>
-            <div><div class="ft">每週 run 貨<span class="spacer"></span>${c.groupCol ? `<span class="seg sm"><button data-sc="group" class="${scope === 'group' ? 'on' : ''}">只看 ${esc(group)}</button><button data-sc="all" class="${scope === 'all' ? 'on' : ''}">全部 wafer</button></span>` : ''}</div><div class="plot" id="twWeek"></div><div class="small muted" id="twSpan"></div></div>
+            <div><div class="ft">每週 run 貨<span class="spacer"></span>${c.groupCol ? `<span class="seg sm"><button data-sc="group" class="${scope === 'group' ? 'on' : ''}">只看 ${esc(group)}</button><button data-sc="all" class="${scope === 'all' ? 'on' : ''}">全部 wafer</button></span>` : ''}</div><div class="plot" id="twWeek"></div></div>
           </div>
           <div class="tw-bot"><div class="ft">${esc(short(item))} 依 ${esc(picked.map(short).join(' × '))} </div><div class="plot" id="twBox"></div></div>`;
         b.querySelectorAll('[data-tc]').forEach((x) => (x.onclick = () => { const n = x.dataset.tc; if (sel.has(n)) { if (sel.size > 1) sel.delete(n); } else sel.add(n); draw(); }));
@@ -1075,9 +1159,6 @@ ${linkChip()}</div>`;
           const LW = { ...baseLayout(200), barmode: 'stack', margin: { l: 40, r: 8, t: 8, b: 40 }, legend: { orientation: 'h', x: 0, y: 1.12, font: { size: 10 } }, xaxis: { ...baseLayout(0).xaxis, type: 'date', tickformat: '%m/%d' }, yaxis: { ...baseLayout(0).yaxis, title: { text: '片數／週', font: { size: 10 } } } };
           if (cT.length) LW.shapes = [{ type: 'rect', xref: 'x', yref: 'paper', x0: weekStart(new Date(Math.min(...cT))), x1: new Date(weekStart(new Date(Math.max(...cT))).getTime() + 7 * 864e5), y0: 0, y1: 1, fillcolor: col0, opacity: 0.08, line: { width: 0 }, layer: 'below' }];
           Plotly.newPlot(wk, tr, LW, { ...CFG, displayModeBar: false });
-          // first / last appearance per level → spot tools that went down or came online
-          const endT = Math.max(...rowsT.map((x) => x[tcol].getTime())), fmtD = (t) => App.fmtDate(new Date(t)).slice(5, 10);
-          b.querySelector('#twSpan').innerHTML = '出現期間：' + lvAll.map((k) => { const ts = rowsT.filter((x) => keyFn(x) === k).map((x) => x[tcol].getTime()); const a = Math.min(...ts), z = Math.max(...ts); const down = endT - z > 21 * 864e5, fresh = a - Math.min(...rowsT.map((x) => x[tcol].getTime())) > 21 * 864e5; return `<span style="${k === hitLv ? 'color:#d4580f;font-weight:600' : ''}">${esc(k)} ${fmtD(a)}～${fmtD(z)}${down ? '（已停）' : ''}${fresh ? '（後期加入）' : ''}</span>`; }).join('　');
         } else wk.innerHTML = '<div class="empty" style="padding:30px">沒有時間欄位，無法畫每週 run 貨</div>';
         // --- box plot with K annotations per level and n under the tick labels
         const traces = [];
@@ -1164,8 +1245,8 @@ ${linkChip()}</div>`;
     if (fs.offOnly) return `已掃 ${fs.map((x) => short(x.col)).join('、')}（非本層）無集中；本層${fs.itemLayer ? ` ${fs.itemLayer}` : ''} 機台資料未提供`;
     const top = fs.find((x) => !x.confound && x.tested.length >= 2);
     if (top && top.tested.every((l) => l.nB > 0 && l.k != null && Math.abs(l.k) > th.kO && Math.sign(l.k) === Math.sign(c.k ?? c.dir))) return `${short(top.col)} ${top.tested.length}/${top.tested.length} 台皆偏（非 tool-specific）→ 查上游製程`;
-    if (conf.length && conf.length === fs.length) return `${conf.map((x) => short(x.col)).join('、')}：CIP 走的機台沒有 BSL 可對照，無法分辨機台或條件`;
-    return `${fs.length} 個機台欄皆無集中${conf.length ? `（${conf.map((x) => short(x.col)).join('、')} 與條件混淆）` : ''}`;
+    if (conf.length && conf.length === fs.length) return '';   // v3.8: CIP-only tools (cross-fab case) — no comment, the row is just the route to the tool window
+    return `${fs.length} 個機台欄皆無集中`;
   }
   /** cross-check cards: inline ↔ WAT, tool, yield — one line each, three states (ok 對上／warn 部分或反向／no 未對上／need 缺資料), click opens the chart */
   function crossChecks(f) {
@@ -1397,10 +1478,10 @@ ${linkChip()}</div>`;
   const cellWorst = (x0, mode) => S.cfg.cips.reduce((a, p) => E.worse(a, E.worse(x0[p].level, mode === 'inline' ? x0[p].varLevel || 'na' : 'na')), 'na');
   const itemWorst = (it, mode) => S.res.groups.reduce((a, g) => E.worse(a, cellWorst(S.res.cells[it.name][g], mode)), 'na');
   function renderTrend() {
-    S.dirty.trend = false;
+    S.dirty.trend = false; resetPlotQ();
     const r = S.res, c = S.cfg, el = $('trend'), mode = S.mode;
     el.querySelectorAll('.js-plotly-plot').forEach((p) => Plotly.purge(p));
-    const mine = r.items.filter((i) => i.kind === mode);
+    const mine = sortLayer(r.items.filter((i) => i.kind === mode));
     const abn = mine.filter((it) => isAbnL(itemWorst(it, mode)));
     const lf = (a) => (S.rowf.layers.length ? a.filter((it) => S.rowf.layers.includes(RU.layer(it.name))) : a);
     const list = lf(S.trend.mode === 'abn' ? abn : S.trend.mode === 'all' ? mine : r.items);
@@ -1426,7 +1507,7 @@ ${linkChip()}</div>`;
     io = new IntersectionObserver((ents) => ents.forEach((en) => {
       if (!en.isIntersecting) return;
       const cell = en.target; io.unobserve(cell);
-      plotInto(cell.querySelector('.plot'), trendFig(cell.dataset.item, cell.dataset.group, 165, { mini: true }), true);
+      queuePlot(cell.querySelector('.plot'), () => trendFig(cell.dataset.item, cell.dataset.group, 165, { mini: true }));
     }), { rootMargin: '300px' });
     el.querySelectorAll('.mc').forEach((x) => io.observe(x));
   }
@@ -1517,7 +1598,7 @@ ${linkChip()}</div>`;
     } finally { Plotly.purge(div); div.remove(); }
   }
   const modulesPresent = () => E.KINDS.filter((k) => S.res.items.some((i) => i.kind === k));
-  const busy = (msg) => { const b = $('busy'); b.hidden = !msg; b.textContent = msg || ''; };
+  const busy = (msg) => { const b = $('busy'); b.hidden = !msg; if (msg || !b.classList.contains('prog')) { b.classList.remove('prog'); b.textContent = msg || ''; } };
 
   /** static one-page HTML (current module): overview lights + every HL with trend & partner chart */
   async function buildHtml() {
@@ -1578,6 +1659,187 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       await pptx.writeFile({ fileName: stampName('BEOL_Report', 'pptx') });
       App.toast(`已匯出 PPT（${pptx.slides.length} 頁，${((performance.now() - t0) / 1000).toFixed(1)} s）`, 'ok');
     } catch (e) { console.error(e); App.toast(`PPT 匯出失敗：${e.message}`, 'err'); } finally { busy(''); }
+  }
+  /** PPT lights table(s) for a module: native editable tables; N moves into the header when uniform per column; returns {tables, addLights, tableH, paginate} */
+  function lightTables(m, K) {
+    const { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx } = K, MUTED = '595959';
+    const its = r.items.filter((i) => i.kind === m);
+    const views = m === 'inline' ? [['mean', '點燈表（均值 K-shift）'], ['var', '變異比較（W2W／WIW σ 倍數）']] : [['mean', '點燈表']];
+    const nc = r.groups.length * c.cips.length, colW0 = 2.1, colW = Math.min(1.6, (SW - 1.2 - colW0) / Math.max(1, nc));
+    const many = nc > 8, fsL = many ? 9.5 : 11, rowH = many ? 0.29 : 0.34;
+    const hcell = (text, align = 'center') => ({ text, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align, fontSize: many ? 9 : 10.5 } });
+    // wafer counts: when every item in a column has the same N (the usual case) the count moves into the header and the cells stay one line — a 10–14 item module then fits one page
+    const colN = r.groups.flatMap((g) => c.cips.map((p) => { const ns = new Set(its.map((it) => r.cells[it.name][g][p]).filter((x) => x.level !== 'na').map((x) => x.n)); return ns.size === 1 ? [...ns][0] : null; }));
+    const nInHead = colN.length > 0 && colN.every((n) => n != null);
+    const headL = [hcell(`${MOD[m]} item${c.groupCol ? `\n${c.groupCol} →` : ''}`, 'left'),
+      ...r.groups.flatMap((g) => c.cips.map((p) => hcell(c.groupCol ? (c.cips.length > 1 ? `${g}\n${p}` : g) : `${p}\nvs ${c.baseline}`))).map((h, i) => (nInHead ? { ...h, text: `${h.text}\n${colN[i]}pcs` } : h))];
+    const tables = views.map(([view, vt]) => {
+      const rows = [], byCatP = new Map();
+      [...its].sort((a, b) => (/^other/.test(a.cat) ? 1 : 0) - (/^other/.test(b.cat) ? 1 : 0)).forEach((it) => { if (!byCatP.has(it.cat)) byCatP.set(it.cat, []); byCatP.get(it.cat).push(it); });
+      for (const [cat, catIts] of byCatP) {
+        rows.push([{ text: RU.byId(cat).label, options: { colspan: nc + 1, fill: { color: 'F2F2F2' }, color: MUTED, bold: true, fontSize: 9 } }]);
+        for (const it of catIts) rows.push([{ text: short(it.name), options: { bold: true, align: 'left' } }, ...r.groups.flatMap((g) => c.cips.map((p) => {
+          const x = r.cells[it.name][g][p], fs = fsL;
+          const lvl = view === 'var' ? x.varLevel : x.level;
+          const fill = { color: lvl === 'orange' ? 'FBE3DA' : lvl === 'yellow' ? 'FBF1D8' : 'FFFFFF' };
+          if (view === 'var') { const t = [x.sdRatio != null ? `W2W ×${x.sdRatio.toFixed(1)}` : '', x.wiwRatio != null ? `WIW ×${x.wiwRatio.toFixed(1)}` : ''].filter(Boolean).join('\n') || '—'; return { text: t, options: { color: LVC[lvl] || GREY, bold: true, align: 'center', fontFace: 'Arial', fontSize: fs, fill } }; }
+          return { text: x.level === 'na' ? [{ text: '—', options: { color: GREY, fontSize: fs } }] : nInHead ? [{ text: shiftTxt(x), options: { color: LVC[lvl], bold: true, fontSize: fs } }] : [{ text: shiftTxt(x), options: { color: LVC[lvl], bold: true, fontSize: fs, breakLine: true } }, { text: `${x.n}pcs`, options: { color: '7F7F7F', fontSize: Math.max(7.5, fs - 2.5) } }], options: { align: 'center', fontFace: 'Arial', fill, valign: 'middle' } };
+        }))]);
+      }
+      const two = many ? 0.4 : 0.46;   // two-line cells (W2W／WIW, or shift + pcs) need this much whatever rowH says
+      const twoLine = view === 'var' ? r.hasWiw : !nInHead;   // W2W only (by-wafer data) → one line
+      return { view, vt, rows, rh: twoLine ? two : rowH, min: twoLine ? two : 0.24 };
+    });
+    const tableH = (t, n) => (n + 1) * t.rh + 0.1;
+    const addLights = (s, t, y, rowsSlice) => s.addTable([headL, ...rowsSlice], { x: Math.max(0.6, (SW - colW0 - colW * nc) / 2), y, w: colW0 + colW * nc, colW: [colW0, ...Array(nc).fill(colW)], fontFace: FONT, fontSize: fsL, rowH: t.rh, valign: 'middle', margin: many ? 2 : 4, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
+    /** split a table into page slices that fit `avail` inches: first tighten row height (down to t.min), then paginate without orphaned category headers */
+    const paginate = (t, avail) => {
+      if ((t.rows.length + 1) * t.rh + 0.1 > avail) t.rh = Math.max(t.min, Math.min(t.rh, (avail - 0.1) / (t.rows.length + 1)));
+      const per = Math.max(4, Math.floor((avail - 0.1) / t.rh) - 1);
+      const isHead = (row) => !!(row[0].options && row[0].options.colspan);
+      const chunks = []; for (let i = 0; i < t.rows.length;) { let end = Math.min(t.rows.length, i + per); if (end < t.rows.length && isHead(t.rows[end - 1])) end--;
+        const sl = t.rows.slice(i, end); if (i > 0 && !isHead(sl[0])) { let j = i - 1; while (j > 0 && !isHead(t.rows[j])) j--; if (isHead(t.rows[j])) sl.unshift(t.rows[j]); } chunks.push(sl); i = end; }
+      return chunks;
+    };
+    return { tables, addLights, tableH, paginate };
+  }
+  /** v3.8 layer order for stacks: (Mx, Vx−1) belong to the same metal layer → M1, M2, V1, M3, V2 …; TM／TV after the Mx stack; items without a layer last; stable within a layer */
+  const layerKey = (name) => { const m = (RU.layer(name) || '').match(/^(TM|TV|M|V)(\d+)$/i); if (!m) return 1e6; const pre = m[1].toUpperCase(), n = +m[2]; return (pre.startsWith('T') ? 1000 : 0) + (pre.endsWith('V') ? (n + 1) * 10 + 1 : n * 10); };
+  const sortLayer = (items) => items.map((it, i) => ({ it, i, k: layerKey(it.name) })).sort((a, b) => a.k - b.k || a.i - b.i).map((x) => x.it);
+  // ================================================================ v3.7 "Summary 排排站": one row per item — name cell | trend (means annotated) | K-shift; then the same stack for P-charts
+  async function exportPptStack() {
+    if (!window.PptxGenJS) { App.toast('PPT 程式庫沒有載入（lite 版需要能連到 cdn.jsdelivr.net）；請改用完整版 BEOL_Report.html', 'err'); return; }
+    const t0 = performance.now();
+    try {
+      const pptx = await buildPptStack();
+      busy('寫出 PPT…');
+      await pptx.writeFile({ fileName: stampName('BEOL_Summary', 'pptx') });
+      App.toast(`已匯出 Summary 排排站（${pptx.slides.length} 頁，${((performance.now() - t0) / 1000).toFixed(1)} s）`, 'ok');
+    } catch (e) { console.error(e); App.toast(`PPT 匯出失敗：${e.message}`, 'err'); } finally { busy(''); }
+  }
+  /** adaptive stack layout: every group keeps its own column(s) — a group with ≤ maxRows items is one column, a longer one is split into
+   *  ceil(n / maxRows) equal columns; two columns per page; row height follows the tallest column on the deck (capped 1.5 in) so pages match. */
+  function stackLayout(groups, maxRows = 7) {
+    const cols = [];
+    for (const g of groups) { const n = g.items.length; if (!n) continue; const k = Math.ceil(n / maxRows), per = Math.ceil(n / k); for (let i = 0; i < k; i++) cols.push({ g: g.name, part: k > 1 ? `${i + 1}/${k}` : '', items: g.items.slice(i * per, (i + 1) * per) }); }
+    const rows = Math.max(1, ...cols.map((c) => c.items.length));
+    const pages = []; for (let i = 0; i < cols.length; i += 2) pages.push(cols.slice(i, i + 2));
+    return { cols, rows, pages };
+  }
+  async function buildPptStack() {
+    const r = S.res, c = S.cfg, mods = ['inline', 'wat', 'yield'].filter((m) => r.items.some((i) => i.kind === m));
+    const pptx = new window.PptxGenJS();
+    pptx.layout = 'LAYOUT_WIDE'; pptx.title = 'BEOL Summary 排排站';
+    const SW = 13.33, SH = 7.5, RED = 'C00000', BLUE = '1F3FBF', INK = '000000', MUTED = '595959', LINE = 'BFBFBF', GREY = '808080';
+    const LVC = { orange: 'C00000', yellow: 'B8860B', green: '2E7D32', na: '808080' };
+    const cipHex = (p) => condColor(p).replace('#', '').toUpperCase();
+    let page = 0, done = 0;
+    const total = mods.reduce((a, m) => a + r.items.filter((i) => i.kind === m).length * r.groups.length * 2, 0);
+    const tick = () => busy(`產生 Summary 圖表 ${++done} / ${total}…`);
+    const strip = (u) => u.replace(/^data:/, '');
+    const tb = (s, t, o) => s.addText(t, { fontFace: FONT, margin: 0, valign: 'top', ...o });
+    /** condition legend (sample deck style): coloured square + "A廠 BSL" / "B廠 CIP", top right of every page */
+    const legend = (s) => {
+      const conds = [[c.baseline, 'BSL'], ...c.cips.map((p) => [p, 'CIP'])];
+      conds.forEach(([p, role], i) => { const y = 0.18 + i * 0.26; s.addShape(pptx.ShapeType.rect, { x: SW - 2.45, y: y + 0.05, w: 0.16, h: 0.16, fill: { color: cipHex(p) }, line: { color: cipHex(p) } }); tb(s, `${p}  ${role}`, { x: SW - 2.22, y, w: 1.75, h: 0.26, fontSize: 11, bold: true, color: cipHex(p), valign: 'middle' }); });
+    };
+    const frame = (title) => {
+      const s = pptx.addSlide(); page++; s.background = { color: 'FFFFFF' };
+      tb(s, title, { x: 2.5, y: 0.2, w: SW - 5.0, h: 0.55, fontSize: 24, bold: true, color: RED, align: 'center', fit: 'shrink' });
+      s.addShape(pptx.ShapeType.rect, { x: 0, y: SH - 0.32, w: SW, h: 0.32, fill: { color: '262626' }, line: { color: '262626' } });
+      tb(s, String(page), { x: 0, y: SH - 0.3, w: SW, h: 0.28, fontSize: 10, color: 'FFFFFF', align: 'center', valign: 'middle' });
+      legend(s);
+      return s;
+    };
+    const section = (s, t, x, y, w) => { s.addShape(pptx.ShapeType.rect, { x, y: y + 0.07, w: 0.16, h: 0.16, fill: { color: 'FFFFFF' }, line: { color: BLUE, width: 1.5 } }); tb(s, t, { x: x + 0.26, y, w: w - 0.26, h: 0.3, fontSize: 14, bold: true, color: BLUE, underline: { style: 'sng' }, fit: 'shrink' }); };
+    const bullets = (s, items, y, h) => s.addText(items.flatMap((runs, i) => [{ text: '● ', options: { color: RED, fontSize: 9, bold: true } }, ...runs.map((q) => ({ text: q.t, options: { color: q.c || INK, bold: true, fontSize: 13, breakLine: !!q.br } })), ...(i < items.length - 1 ? [{ text: '', options: { breakLine: true } }] : [])]),
+      { x: 0.7, y, w: SW - 1.4, h: h || 0.32 * items.length + 0.1, fontFace: FONT, margin: 0, valign: 'top', paraSpaceAfter: 4, fit: 'shrink' });
+    /** chart PNG for one stack row at the row's own aspect; tick fonts sized for the shrink; mean (bold) + pcs (small grey) annotated above the plot area */
+    const rowPng = async (fig, w, h, annos, lastRow, opts = {}) => {
+      const px = 150, pw = Math.round(w * px), ph = Math.round(h * px), fs = 17;
+      const L = fig.layout; L.showlegend = false; L.font = { ...(L.font || {}), size: fs };
+      for (const ax of ['xaxis', 'yaxis']) { L[ax] = L[ax] || {}; L[ax].tickfont = { ...(L[ax].tickfont || {}), size: fs }; L[ax].title = null; }
+      const shortRow = h < 0.85;   // 6–7 rows per column: one annotation line (mean + pcs inline) and 3 y ticks so the plot area survives
+      L.xaxis.showticklabels = opts.xAlways || !!lastRow;
+      if (!opts.keepY) L.yaxis.nticks = h < 1.0 ? 3 : 4; else if (shortRow) { L.yaxis.tickvals = [-2.326, 0, 2.326]; L.yaxis.ticktext = ['0.01', '0.5', '0.99']; }
+      L.plot_bgcolor = '#fafbfc';
+      L.margin = { l: Math.round(fs * 3.4), r: 10, t: Math.round(fs * (shortRow ? 1.4 : 2.4)), b: lastRow || opts.xAlways ? Math.round(fs * 1.6) : 10 };
+      L.annotations = annos.flatMap((a, i) => { const x = (i + 1) / (annos.length + 1); return shortRow ? [{ text: `<b>${a.t}</b>${a.n != null ? ` <span style="color:#8a94a6">(${a.n})</span>` : ''}`, x, y: 1, xref: 'paper', yref: 'paper', xanchor: 'center', yanchor: 'bottom', yshift: 2, showarrow: false, font: { size: fs + 1, color: a.c, family: 'Arial' } }] : [
+        { text: `<b>${a.t}</b>`, x, y: 1, xref: 'paper', yref: 'paper', xanchor: 'center', yanchor: 'bottom', yshift: fs * 0.95, showarrow: false, font: { size: fs + 2, color: a.c, family: 'Arial' } },
+        ...(a.n != null ? [{ text: `(${a.n})`, x, y: 1, xref: 'paper', yref: 'paper', xanchor: 'center', yanchor: 'bottom', yshift: 1, showarrow: false, font: { size: fs - 4, color: '#8a94a6', family: 'Arial' } }] : [])]; });
+      const nPts = fig.data.reduce((a, t) => a + (t.mode && t.mode.includes('markers') && t.x ? t.x.length : 0), 0), msc = nPts > 1500 ? 1.25 : nPts > 600 ? 1.6 : 2.1;
+      for (const t of fig.data) { if (t.marker && t.marker.size != null) t.marker.size = Array.isArray(t.marker.size) ? t.marker.size.map((v) => v * msc) : t.marker.size * msc; if (t.marker && t.marker.line && t.marker.line.width != null && !Array.isArray(t.marker.line.width)) t.marker.line.width *= 1.3; if (t.line && t.line.width) t.line.width *= 1.5; }
+      const u = await figPng(fig, pw, ph); tick(); return strip(u);
+    };
+    /** one stacked page set: items in layer order, every group its own column(s); makeRow({it, g}) → {fig, annos, right:[{p,t,c}]} */
+    const stack = async (its, title, makeRow, xTitle, opts = {}) => {
+      const { rows, pages } = stackLayout(r.groups.map((g) => ({ name: g, items: its })));
+      if (!pages.length) return;
+      const top = 1.0, bottom = SH - 0.45, gap = 0.3, nameW = 1.3, rightW = c.cips.length > 2 ? 1.15 : 0.9, pad = 0.06, head = c.groupCol ? 0.3 : 0;
+      const colW = (SW - 1.2 - gap) / 2, chartW = colW - nameW - rightW - pad * 2;
+      const rowH = Math.min(1.5, (bottom - top - head - 0.3) / rows);
+      for (let pg = 0; pg < pages.length; pg++) {
+        const s = frame(`${title}${pages.length > 1 ? `（${pg + 1}/${pages.length}）` : ''}`);
+        for (let ci = 0; ci < pages[pg].length; ci++) {
+          const col = pages[pg][ci], x0 = 0.6 + ci * (colW + gap);
+          if (head) tb(s, `${col.g}${col.part ? `（${col.part}）` : ''}`, { x: x0, y: top, w: colW, h: head, fontSize: 13, bold: true, color: BLUE, align: 'left', valign: 'middle' });
+          // name column drawn as one contiguous table (sample deck look): shared borders, no gaps
+          const n = col.items.length, yTop = top + head;
+          s.addTable(col.items.map((it) => [{ text: [{ text: short(it.name), options: { bold: true, fontSize: rowH < 0.95 ? 10 : 11.5, color: INK, breakLine: !!unit(it.name) } }, ...(unit(it.name) ? [{ text: unit(it.name), options: { fontSize: 8.5, color: MUTED } }] : [])], options: { align: 'center', valign: 'middle', fill: { color: 'F2F2F2' } } }]),
+            { x: x0, y: yTop, w: nameW, colW: [nameW], rowH, fontFace: FONT, border: { type: 'solid', pt: 0.75, color: '7F7F7F' }, margin: 2, autoPage: false });
+          for (let k = 0; k < n; k++) {
+            const it = col.items[k], g = col.g, last = k === n - 1, y0 = yTop + k * rowH, h = rowH - 0.06;
+            const { fig, annos, right } = makeRow({ it, g });
+            if (fig) { const png = await rowPng(fig, chartW, h, annos, last, opts); s.addImage({ data: png, x: x0 + nameW + pad, y: y0 + 0.03, w: chartW, h }); }
+            else tb(s, '無資料', { x: x0 + nameW + pad, y: y0, w: chartW, h, fontSize: 10, color: MUTED, align: 'center', valign: 'middle' });
+            s.addText(right.flatMap((q, i) => [...(c.cips.length > 1 ? [{ text: `${q.p} `, options: { fontSize: 8.5, color: cipHex(q.p), bold: true } }] : []), { text: q.t, options: { fontSize: right.length > 2 ? 11 : 13, bold: true, color: q.c, fontFace: 'Arial', breakLine: i < right.length - 1 } }]),
+              { x: x0 + nameW + pad * 2 + chartW, y: y0, w: rightW, h: rowH, fontFace: FONT, margin: 0, align: 'left', valign: 'middle', fit: 'shrink' });
+            if (last) tb(s, xTitle(it), { x: x0 + nameW + pad, y: y0 + rowH + 0.01, w: chartW, h: 0.2, fontSize: 8.5, color: MUTED, align: 'center' });
+          }
+        }
+      }
+    };
+    const hlLines = (m) => { const by = new Map(); for (const f of r.findings[m]) { const k = `${r.groups.length > 1 ? f.cell.group + ' ' : ''}${f.cell.cip}`; if (!by.has(k)) by.set(k, []); by.get(k).push(`${short(f.cell.item.name)} ${shiftTxt(f.cell)}`); } return [...by].map(([k, a]) => ({ k, a })); };
+    // ---- cover
+    {
+      const s = frame(`Summary 排排站：${c.cips.join('、')} vs ${c.baseline}`);
+      const runs = [];
+      for (const m of mods) { const its = sortLayer(r.items.filter((i) => i.kind === m)); runs.push([{ t: `${MOD[m]}　` }, { t: `${its.length} item × ${r.groups.length} 組`, c: BLUE }, { t: `　${its.map((i) => short(i.name)).slice(0, 12).join('、')}${its.length > 12 ? '…' : ''}` }]); }
+      runs.push([{ t: '條件　' }, { t: `${c.baseline} BSL ${r.nWafer[c.baseline] || 0} 片`, c: cipHex(c.baseline) }, ...c.cips.map((p) => ({ t: `　${p} ${r.nWafer[p] || 0} 片`, c: cipHex(p) }))]);
+      if (c.groupCol) runs.push([{ t: `${c.groupCol}　` }, { t: r.groups.join('、'), c: BLUE }]);
+      runs.push([{ t: '頁序　' }, { t: mods.map((m) => `${MOD[m]} 點燈表 → trend 排排站 → quantile 排排站`).join('；'), c: BLUE }]);
+      runs.push([{ t: '每列　' }, { t: '項目｜trend：BSL mean、CIP mean（括號 = 片數）｜K-shift（σ）', c: BLUE }, { t: '；quantile：x = 量測值、y = 常態分位（機率），每條件一條線' }]);
+      bullets(s, runs, 1.3, 4.5);
+    }
+    // ---- per module: lights table page(s) → trend stack → quantile stack
+    const xT = () => { const by = orderBy(); return `wafer 順序（依 ${short(by)}）`; };
+    for (const m of mods) {
+      const its = sortLayer(r.items.filter((i) => i.kind === m));
+      const { tables, addLights, tableH, paginate } = lightTables(m, { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx });
+      const Lhl = hlLines(m).slice(0, 4), sumY = 1.1 + 0.33 * Math.max(1, Lhl.length) + 0.2;
+      const addSummary = (s) => bullets(s, Lhl.length ? Lhl.map((l) => [{ t: `${l.k}　` }, { t: l.a.join('、'), c: BLUE }]) : [[{ t: 'CIP 與 BSL match', c: BLUE }]], 1.0, 1.4);
+      const totalH = tables.reduce((a, t) => a + tableH(t, t.rows.length) + 0.45, 0);
+      if (sumY + totalH <= SH - 0.5) {
+        const s = frame(`${MOD[m]} 點燈表`); addSummary(s); let y = sumY;
+        tables.forEach((t, i) => { if (tables.length > 1) { section(s, t.vt, 0.6, y, 6); y += 0.4; } addLights(s, t, y, t.rows); y += tableH(t, t.rows.length) + 0.25; });
+      } else for (const t of tables) { const chunks = paginate(t, SH - 0.5 - sumY - 0.1); chunks.forEach((sl, pg) => { const s = frame(`${MOD[m]} ${t.vt}${chunks.length > 1 ? `（${pg + 1}/${chunks.length}）` : ''}`); addSummary(s); addLights(s, t, sumY, sl); }); }
+      await stack(its, `${MOD[m]} Summary 排排站 ｜ ${c.cips.join('、')} vs ${c.baseline}`, ({ it, g }) => {
+        const fig = trendFig(it.name, g, 300, { mini: true });
+        const cells = r.cells[it.name][g], c0 = cells[c.cips[0]];
+        const mv = (x, b) => (it.metric === 'fold' ? f4(b ? x.bmedian : x.median) : it.metric === 'rate' ? pct(b ? x.rateB : x.rateC) : f4(b ? x.bmean : x.mean));
+        const annos = [{ t: c0 ? mv(c0, true) : '—', n: c0 ? c0.bn : null, c: condColor(c.baseline) }, ...c.cips.map((p) => ({ t: cells[p].level === 'na' ? '—' : mv(cells[p]), n: cells[p].level === 'na' ? null : cells[p].n, c: condColor(p) }))];
+        const right = c.cips.map((p) => ({ p, t: shiftTxt(cells[p]), c: LVC[cells[p].level] }));
+        return { fig, annos, right };
+      }, () => xT());
+      await stack(its, `${MOD[m]} Quantile 排排站 ｜ Normal Quantile vs 量測值`, ({ it, g }) => {
+        const Q = qStats(it.name, g), fig = qFig(it.name, g, 300, { mini: true, stats: Q });
+        const cells = r.cells[it.name][g], sB = Q.series[c.baseline];
+        const annos = [{ t: sB ? `P50 ${f4(sB.p50)}` : '—', n: sB ? sB.n : null, c: condColor(c.baseline) }, ...c.cips.map((p) => { const sq = Q.series[p]; return { t: sq ? `P50 ${f4(sq.p50)}` : '—', n: sq ? sq.n : null, c: condColor(p) }; })];
+        const right = c.cips.map((p) => { const x = cells[p]; const sd = x.sdRatio != null && x.level !== 'na' ? ` σ×${x.sdRatio.toFixed(1)}` : ''; return { p, t: `${shiftTxt(x)}${sd}`, c: LVC[x.level] }; });
+        return { fig, annos, right };
+      }, (it) => `${short(it.name)}${unit(it.name) ? ` (${unit(it.name)})` : ''}${it.metric === 'fold' ? '，log' : ''}`, { xAlways: true, keepY: true });
+    }
+    return pptx;
   }
   async function buildPpt() {
     // v3.3 design language (docs/PPT_STYLE.md): white page, red centred title = item + shift, summary bullets with numbers in blue,
@@ -1663,29 +1925,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     for (const m of mods) {
       const its = r.items.filter((i) => i.kind === m);
       // ================================================================ light table(s): native, editable
-      const views = m === 'inline' ? [['mean', '點燈表（均值 K-shift）'], ['var', '變異比較（W2W／WIW σ 倍數）']] : [['mean', '點燈表']];
-      const nc = r.groups.length * c.cips.length, colW0 = 2.1, colW = Math.min(1.6, (SW - 1.2 - colW0) / Math.max(1, nc));
-      const many = nc > 8, fsL = many ? 9.5 : 11, rowH = many ? 0.29 : 0.34;
-      const hcell = (text, align = 'center') => ({ text, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align, fontSize: many ? 9 : 10.5 } });
-      const headL = [hcell(`${MOD[m]} item${c.groupCol ? `\n${c.groupCol} →` : ''}`, 'left'),
-        ...r.groups.flatMap((g) => c.cips.map((p) => hcell(c.groupCol ? (c.cips.length > 1 ? `${g}\n${p}` : g) : `${p}\nvs ${c.baseline}`)))];
-      const tables = views.map(([view, vt]) => {
-        const rows = [], byCatP = new Map();
-        [...its].sort((a, b) => (/^other/.test(a.cat) ? 1 : 0) - (/^other/.test(b.cat) ? 1 : 0)).forEach((it) => { if (!byCatP.has(it.cat)) byCatP.set(it.cat, []); byCatP.get(it.cat).push(it); });
-        for (const [cat, catIts] of byCatP) {
-          rows.push([{ text: RU.byId(cat).label, options: { colspan: nc + 1, fill: { color: 'F2F2F2' }, color: MUTED, bold: true, fontSize: 9 } }]);
-          for (const it of catIts) rows.push([{ text: short(it.name), options: { bold: true, align: 'left' } }, ...r.groups.flatMap((g) => c.cips.map((p) => {
-            const x = r.cells[it.name][g][p], fs = fsL;
-            const lvl = view === 'var' ? x.varLevel : x.level;
-            const fill = { color: lvl === 'orange' ? 'FBE3DA' : lvl === 'yellow' ? 'FBF1D8' : 'FFFFFF' };
-            if (view === 'var') { const t = [x.sdRatio != null ? `W2W ×${x.sdRatio.toFixed(1)}` : '', x.wiwRatio != null ? `WIW ×${x.wiwRatio.toFixed(1)}` : ''].filter(Boolean).join('\n') || '—'; return { text: t, options: { color: LVC[lvl] || GREY, bold: true, align: 'center', fontFace: 'Arial', fontSize: fs, fill } }; }
-            return { text: x.level === 'na' ? [{ text: '—', options: { color: GREY, fontSize: fs } }] : [{ text: shiftTxt(x), options: { color: LVC[lvl], bold: true, fontSize: fs, breakLine: true } }, { text: `${x.n}pcs`, options: { color: '7F7F7F', fontSize: Math.max(7.5, fs - 2.5) } }], options: { align: 'center', fontFace: 'Arial', fill, valign: 'middle' } };
-          }))]);
-        }
-        return { view, vt, rows, rh: view === 'var' ? rowH : rowH + 0.1 };
-      });
-      const tableH = (t, n) => (n + 1) * t.rh + 0.1;
-      const addLights = (s, t, y, rowsSlice) => s.addTable([headL, ...rowsSlice], { x: Math.max(0.6, (SW - colW0 - colW * nc) / 2), y, w: colW0 + colW * nc, colW: [colW0, ...Array(nc).fill(colW)], fontFace: FONT, fontSize: fsL, rowH: t.rh, valign: 'middle', margin: many ? 2 : 4, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
+      const { tables, addLights, tableH, paginate } = lightTables(m, { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx });
       // ---- HL 總表 rows (built here so a short module can share the lights page)
       const fsAll = r.findings[m];
       const hc = (t) => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align: 'left', fontSize: 10.5 } });
@@ -1712,11 +1952,9 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
         if (fsAll.length) { section(s, `HL 總表　✔ 有對上　○ 缺資料　△ 關聯弱　✘ 未對上`, 0.6, y, SW - 1.2); addHL(s, y + 0.4, rowsS); }
       } else {
         for (const t of tables) {
-          const per = many ? 19 : 15;
-          for (let i = 0, pg = 0; i < t.rows.length; i += per, pg++) {
-            const s = frame(`${MOD[m]} ${t.vt}${t.rows.length > per ? `（${pg + 1}/${Math.ceil(t.rows.length / per)}）` : ''}`); addSummary(s);
-            addLights(s, t, sumY, t.rows.slice(i, i + per));
-          }
+          // rows per page from the space left under the summary; first try a tighter row height so a 10–14 item module stays on one page, then paginate (category header repeated on the continuation)
+          const chunks = paginate(t, SH - 0.5 - sumY - 0.1);
+          chunks.forEach((sl, pg) => { const s = frame(`${MOD[m]} ${t.vt}${chunks.length > 1 ? `（${pg + 1}/${chunks.length}）` : ''}`); addSummary(s); addLights(s, t, sumY, sl); });
         }
         if (fsAll.length) {
           const per = 9;
@@ -1771,7 +2009,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       // ================================================================ overview trend: abnormal items per group (adaptive 1×1 / 1×2 / 2×2), green items pooled into a 3×3 appendix
       const cells = (list, n) => { const cnt = list.length, cols = cnt === 1 ? 1 : cnt === 2 ? 2 : n, rows = Math.max(1, Math.ceil(Math.min(cnt, n * n) / cols)); return { cols, rows: cnt <= 2 ? 1 : rows }; };
       const grid = async (list, n, title, runs) => {
-        const perPage = n * n;
+        const perPage = Math.ceil(list.length / Math.ceil(list.length / (n * n)));   // balanced pages: 37 cells → 8,8,8,8,5 rather than 9,9,9,9,1
         for (let i = 0, pg = 0; i < list.length; i += perPage, pg++) {
           const chunk = list.slice(i, i + perPage), nPg = Math.ceil(list.length / perPage);
           const s = frame(`${title}${nPg > 1 ? `（${pg + 1}/${nPg}）` : ''}`);
@@ -1962,5 +2200,5 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     App.toast('已複製結論文字，可以直接貼到 mail 或 chat', 'ok');
   }
 
-  App.rptUI = { applyVis, visInit, openColorPop, renderPrep, applyPrep, prepPending, crossChecks, factorVerdict, figPng, trendFig, mainFig, partnerFig, checkRows, loadFile, linkFile, unlink, openToolWin, checkHint, generate, showTab, setMode, exportHtml, exportPpt, buildHtml, buildPpt, summary, openCell, openCorrWin, closeAllWins, selectHL, wins: WM, kbImport, kbSave, kbOverlay };
+  App.rptUI = { applyVis, visInit, openColorPop, renderPrep, applyPrep, prepPending, crossChecks, factorVerdict, figPng, trendFig, mainFig, partnerFig, checkRows, loadFile, linkFile, unlink, openToolWin, checkHint, generate, showTab, setMode, exportHtml, exportPpt, buildHtml, buildPpt, buildPptStack, exportPptStack, stackLayout, qStats, qFig, renderQuantile, sortLayer, summary, openCell, openCorrWin, closeAllWins, selectHL, wins: WM, kbImport, kbSave, kbOverlay };
 })();

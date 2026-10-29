@@ -251,7 +251,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   const fj = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('Con_M13')));
   await page.click(`.hl-row[data-hl="${fj}"]`); await page.waitForTimeout(500);
   const cf = await page.evaluate(() => App.rptUI.factorVerdict(App.rpt.res.findings.wat[App.rpt.hl.wat]));
-  ok(/混淆/.test(cf) && /M12_CMP_Tool/.test(cf), `confounded tool column flagged in the card (${cf})`);
+  ok(/無集中/.test(cf) && !/混淆|無法分辨/.test(cf), `confounded tool column: no comment in the card (v3.8) (${cf})`);
   const sm = await page.evaluate(() => App.rptUI.summary());
   ok(/V12_ETCH_CH：CH_B/.test(sm), 'summary text carries the factor verdict');
 

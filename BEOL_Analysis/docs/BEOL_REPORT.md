@@ -264,6 +264,24 @@ BEOL 後段製程（Cu interconnect）固定流程的 BSL vs CIP 比較工具。
 
 **PPT**：K 表寬度依內容估算（`tw`：CJK 1.0 em、英數 0.7 em；`kWidth`），名稱欄／數值欄各自配寬；總覽格內 K 表上限半格寬，放不下時依序去掉片數後綴、縮字到 7pt，`kTable(..., fixed=true)` 不再自動撐寬，絕不蓋到圖。單張總覽圖（1×1／1×2）與 HL 細節圖的 PNG 以版面格子的實際寬高比重畫（限制 1.8–3.2），貼圖同比例，不再拉伸。封面刪除灰色來源檔小字。
 
+## 0.19 v3.7 Summary 排排站 PPT、P-chart
+
+**第二種 PPT「Summary 排排站」**（`buildPptStack`，按鈕「匯出 PPT（排排站）」）：模仿工程簡報的直列排法——左邊 item 名稱格（淺灰表格樣式）、中間 trend、圖框上方寫 BSL mean 與各 CIP mean（條件色）、右側寫 K-shift（燈號色）。版面自適應（`stackLayout`）：每組自成一欄，≤ 7 個 item 一欄，否則等分成 ceil(n/7) 欄並在欄首標「PA（1/2）」；每頁兩欄；列高 = 可用高度 / 全冊最大列數（上限 1.5 in）；PNG 依該列實際寬高比重畫（150 px/in、刻度 17 px），點大小依每列點數分級；只有每欄最後一列顯示 x 刻度與「wafer 順序（依 X）」；條件圖例固定頁首右上。頁序：封面（模組、item、條件 N、分組）→ 每模組 trend 排排站 → 同模組 P-chart 排排站（Inline → WAT → Yield）。
+
+**P-chart**（`E.pChart`，HTML 分頁「④ P-chart」，PPT 排排站）：JMP 式屬性管制圖。壞 wafer 定義——K 類超出 BSL mean ± 3σ；倍數類超出 BSL median ×/÷ 3σ(log)；固定值類 ≠ 固定值。子群 = lot 欄（≥ 3 個 lot）否則每 N 片（預設 25，可改）；CL = 全部子群合併 p̄；UCL／LCL = p̄ ± 3√(p̄(1−p̄)/n_i) 階梯線（LCL 下限 0）；點依 lot 多數（≥ 60%）條件上色，混合 lot 灰。◆ 超限 = lot 高於 UCL 且 ≥ 2 片壞（一片壞就破 0.3% 的 UCL 是小 lot 的統計現象，不當訊號）。CIP 燈號用合併檢定：橘 = CIP p > BSL p + 3·SE（CIP 自己的 N）且壞 wafer ≥ 2；黃 = > 2 × BSL p 且 ≥ 2 片；綠 = 其他；BSL 不給燈號。x 軸 = lot 依排序欄的順序；HTML 格子的 pill 顯示 BSL p、CIP p、超限 lot 數。
+
+**戰報 PPT 點燈表**：每欄 N 全部相同時片數寫進表頭、格子一行；放不下時先縮列高（最小 0.26 in）再依可用高度分頁，類別標題不留頁尾、續頁重複；只有 W2W 時變異表一行；綠燈附錄格數平均分頁。
+
+## 0.20 v3.8 Quantile plot、排排站完稿、匯入進度與效能、建議檢查修正
+
+**Normal Quantile plot**（取代 v3.7 的 P-chart；`E.quantile`／`E.probit`，分頁「④ Quantile」，排排站 PPT）：JMP Fit Y by X 樣式——x = 量測值（倍數類 log）、y = 常態分位（刻度 0.0001…0.9999），每條件一條線＋點，Blom 位置 p=(i−3/8)/(n+1/4)。> 600 點依 rank 抽稀（兩端各 25 點保留）只影響繪圖。格子 pill：K-shift、σ 倍數。
+
+**排排站 PPT**：頁首右上色塊圖例（■ A廠 BSL／■ B廠 CIP）；名稱欄為一張連續表格；mean 下方括號片數（短列改同行小字）；每模組 點燈表 → trend → quantile；item 依 (Mx, Vx−1) 同層排序（`sortLayer`：M1、M2、V1、M3、V2…，Trend 矩陣同）。點燈表程式抽成 `lightTables()` 給兩份 PPT 共用。
+
+**匯入進度與效能**：六段進度條；SheetJS 在 Web Worker 解析（dense、無格式文字）；縮圖點數上限（BSL 700、CIP 900）；矩陣縮圖排隊一張一個 macrotask。31k 列 × 21 item × 4 組：載入 26.6 → 6–8 s，Trend 矩陣第一張 < 1 s、20 張 4 s。
+
+**機台視窗**：移除「出現期間」文字；CIP 走的機台沒有 BSL 時不下評語。**建議檢查（無知識庫）**：依 pairs 列同層對應 item（Rs → THK、metal CD；Rc → via CD），資料沒有時列為缺資料；鄰層只在知識庫開啟時列。**固定值 item**：整欄常數也進點燈表。
+
 ---
 
 ## 1. 流程

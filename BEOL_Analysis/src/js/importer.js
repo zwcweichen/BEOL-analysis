@@ -4,23 +4,49 @@
   const App = window.App;
   const I = (App.importer = {});
 
-  I.readFile = (file) =>
+  const READ_OPTS = { type: 'array', cellDates: true, dense: true, cellText: false, cellHTML: false };   // v3.8: dense + no formatted text ≈ 40% faster, sheet_to_json 20× faster
+  const AOA_OPTS = { header: 1, raw: true, defval: null, blankrows: false };
+  /** SheetJS source for a worker: the inlined <script> text (full build) or the CDN url (lite build) */
+  const xlsxForWorker = () => {
+    for (const sc of document.querySelectorAll('script')) {
+      if (sc.src && /xlsx/i.test(sc.src)) return { url: sc.src };
+      if (!sc.src && /\/\* \.\.\/vendor\/xlsx|XLSX\s*=|\bXLSX\b/.test(sc.textContent.slice(0, 400)) && sc.textContent.length > 100000) return { text: sc.textContent };
+    }
+    return null;
+  };
+  /** parse off the main thread: the worker returns sheet names + AOA per sheet (Dates survive structured clone); the UI keeps painting the progress bar */
+  const readInWorker = (bytes, lib) => new Promise((resolve, reject) => {
+    const head = lib.url ? `importScripts(${JSON.stringify(lib.url)});` : lib.text;
+    const code = `${head}\nself.onmessage = (e) => { try { const wb = XLSX.read(e.data, ${JSON.stringify(READ_OPTS)}); const aoa = {}; for (const n of wb.SheetNames) aoa[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], ${JSON.stringify(AOA_OPTS)}); postMessage({ SheetNames: wb.SheetNames, aoa }); } catch (err) { postMessage({ error: String(err && err.message || err) }); } };`;
+    const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    let w; try { w = new Worker(url); } catch (e) { URL.revokeObjectURL(url); reject(e); return; }
+    w.onmessage = (e) => { w.terminate(); URL.revokeObjectURL(url); if (e.data && e.data.error) reject(new Error(e.data.error)); else resolve(e.data); };
+    w.onerror = (e) => { w.terminate(); URL.revokeObjectURL(url); reject(new Error(e.message || 'worker error')); };
+    w.postMessage(bytes, [bytes.buffer]);
+  });
+  /** onStage(stage, pct) — v3.8 progress: 'read' with byte %, then 'parse' (in a Web Worker when possible, else on the main thread after one paint) */
+  I.readFile = (file, onStage) =>
     new Promise((resolve, reject) => {
       const fr = new FileReader();
       fr.onerror = () => reject(fr.error);
-      fr.onload = () => {
-        try {
-          const wb = XLSX.read(new Uint8Array(fr.result), { type: 'array', cellDates: true, dense: false });
-          resolve(wb);
-        } catch (e) { reject(e); }
+      fr.onprogress = (e) => { if (onStage && e.lengthComputable) onStage('read', e.loaded / e.total); };
+      fr.onload = async () => {
+        if (onStage) onStage('parse', null);
+        const bytes = new Uint8Array(fr.result);
+        const lib = typeof Worker !== 'undefined' && !I.noWorker ? xlsxForWorker() : null;
+        if (lib) { try { resolve(await readInWorker(bytes, lib)); return; } catch (e) { console.warn('xlsx worker failed, parsing on the main thread', e); } }
+        setTimeout(() => {   // let the progress UI paint before the synchronous parse
+          try { resolve(XLSX.read(new Uint8Array(fr.result), READ_OPTS)); } catch (e) { reject(e); }
+        }, 30);
       };
       fr.readAsArrayBuffer(file);
     });
 
   I.sheetAOA = (wb, sheetName) => {
+    if (wb.aoa) return wb.aoa[sheetName] || [];   // pre-converted by the worker
     const ws = wb.Sheets[sheetName];
     if (!ws) return [];
-    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: false });
+    return XLSX.utils.sheet_to_json(ws, AOA_OPTS);
   };
 
   /** first row that looks like a header: wide enough and mostly non-numeric text */

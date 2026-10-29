@@ -27,7 +27,10 @@ BEOL 後段製程 BSL vs CIP 的固定流程分析工具。這個專案資料夾
 4. 上方按鈕切換 WAT／Inline 模組。戰報頁上方可以直接改分組欄（例如 Part6、不分組）、比較欄、BSL 和 CIP。
 5. 戰報總覽：左邊是點燈表，右邊是異常 HL；點 HL 或按 ↑↓ 切換。點任何燈格或圖會開浮動視窗，可以拖曳、縮放、最大化，也可以同時開兩個並排比對。
 6. 匯出：
-   - **匯出 PPT**：封面、點燈表、HL 總表（所有 HL 一列一個）、HL 細節頁（預設只橘燈，可改全部）、總覽 trend；WAT／Inline／Yield 都會包含
+   - **匯出 PPT（戰報）**：封面、點燈表、HL 總表（所有 HL 一列一個）、HL 細節頁（預設只橘燈，可改全部）、總覽 trend；WAT／Inline／Yield 都會包含
+   - **匯出 PPT（排排站）**：點燈表 → 每個 item 一列（名稱｜trend＋兩條件 mean 與片數｜K-shift），每組一欄、每頁兩欄，item 多時自動拆欄分頁 → 同樣排法的 Normal Quantile plot；item 依 (Mx, Vx−1) 同層排序
+   - **④ Quantile 分頁**：item × 組的 Normal Quantile plot 矩陣（x = 量測值、y = 常態分位，每條件一條線）
+   - **匯入進度條**：讀取 → 解析（背景執行）→ 整理 → 判斷欄位 → 統計 → 畫戰報；3 萬列約 6–8 秒
    - **匯出 HTML**：one-page HTML
    - **列印／PDF**
    - **複製結論**：純文字
@@ -56,7 +59,7 @@ python make_BEOL_Analysis.py --no-samples     # 不產生範例資料
 
 ## 資料夾內容
 - `AGENTS.md`：接手文件（需求、判斷規則、架構、測試、待辦），給 AI agent 或新同事接續開發時閱讀。
-- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v3.6）。
+- `BEOL_Report.html`、`BEOL_Report_lite.html`：可以直接使用的工具（v3.8）。
 - `src/`：原始碼。
   - `src/report/rules_base.js`：診斷知識庫（資料）；`src/report/rules.js`：知識庫程式。
   - `src/report/engine.js`：計算。

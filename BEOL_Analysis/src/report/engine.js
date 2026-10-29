@@ -14,8 +14,9 @@
   const median = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
   // ------------------------------------------------------------------ load
-  E.load = async (file, sheet) => {
-    const wb = await App.importer.readFile(file);
+  E.load = async (file, sheet, onStage) => {
+    const wb = await App.importer.readFile(file, onStage);
+    if (onStage) await onStage('table', null);
     const src = App.importer.createSource(file, wb);
     if (sheet && sheet !== src.sheet && src.sheetNames.includes(sheet)) App.importer.loadSheet(src, sheet);
     return E.fromSource(src);
@@ -83,7 +84,9 @@
     const groupCol = (pick(cand.filter((c) => c.name !== condCol), /part|product|prod|device|tech|^p\d|layer/i, 2, 30) || {}).name || '';
     const cfg = { waferCol, lotCol, dateCol, groupCol, condCol, baseline: null, cips: [], items: [], toolCols: null };
     E.setCond(cfg, ds);
-    cfg.items = cols.filter((c) => c.type === 'number' && !c.count && c.role !== 'x' && c.role !== 'y' && uniq(rows, c.name) > 1)
+    // v3.8: a fixed-value item (SPA …) that never deviates is constant → still an item (green, 0% vs 0%), not dropped as a constant column
+    const isRateCat = (name) => RU().metricOf(RU().classify(name).cat) === 'rate';
+    cfg.items = cols.filter((c) => c.type === 'number' && !c.count && c.role !== 'x' && c.role !== 'y' && (uniq(rows, c.name) > 1 || isRateCat(c.name)))
       .filter((c) => !/^(site|x|y|r \(mm\)|slot|wafer|lot)$/i.test(c.name.trim()))
       .map((c) => {
         const k = RU().classify(c.name);
@@ -507,7 +510,7 @@
       const cipLv = st.levels.filter((l) => l.n > 0);
       const confound = (cipLv.length > 0 && cipLv.every((l) => l.nB === 0)) || ([...cross.values()].every((set) => set.size === 1) && cross.size > 1);
       let note = '';
-      if (confound) note = `CIP 走的 ${cipLv.map((l) => l.v).join('／')} 沒有 BSL wafer 可對照：機台與條件混淆，無法分辨`;
+      if (confound) note = '';   // v3.8: no comment for CIP-only tools (cross-fab BSL/CIP is a normal case)
       else if (st.tested.length < 2) note = st.nLevels === 1 ? `CIP 全部走 ${st.worst.v}（只有一個 level，無法比較）` : '每個 level 的 wafer 少於 3 片';
       out.push({ col: c.name, ...st, confound, note, layerRel: layerRel(c.name), colLayer: RU().layer(c.name) });
     }
@@ -536,6 +539,37 @@
     const cand = E.toolCandidates(ds, cfg);
     const names = Array.isArray(cfg.toolCols) ? cfg.toolCols : cand.filter((c) => c.auto === 'tool').map((c) => c.name);
     return ds.columns.filter((c) => names.includes(c.name));
+  };
+
+  // ================================================================ v3.8 Normal Quantile plot (JMP Fit Y by X style): x = value, y = normal quantile, one series per condition
+  /** inverse standard normal CDF (Acklam), |err| < 1.2e-9 */
+  E.probit = (p) => {
+    if (!(p > 0 && p < 1)) return p <= 0 ? -Infinity : Infinity;
+    const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.383577518672690e2, -3.066479806614716e1, 2.506628277459239], b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+    const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783], d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+    const pl = 0.02425, ph = 1 - pl; let q, r;
+    if (p < pl) { q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    if (p > ph) { q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    q = p - 0.5; r = q * q; return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  };
+  /** probability ticks shown on the quantile axis (JMP's set) */
+  E.Q_TICKS = [0.0001, 0.001, 0.01, 0.05, 0.2, 0.4, 0.6, 0.8, 0.95, 0.99, 0.999, 0.9999];
+  /** rows of one group → per condition the sorted values with Blom plotting positions p = (i − 3/8)/(n + 1/4) and z = Φ⁻¹(p).
+   *  Series longer than `max` points are thinned by rank (both tails kept whole) so the plot stays light; stats use every point. */
+  E.quantile = (rows, item, cfg, cOf, opts = {}) => {
+    const name = item.name, max = opts.max || 600, keepTail = 25, log = item.metric === 'fold';
+    const by = new Map(); for (const cc of [cfg.baseline, ...cfg.cips]) by.set(cc, []);
+    for (const r of rows) { const v = Number(r[name]); if (!Number.isFinite(v) || (log && v <= 0)) continue; const cc = cOf(r); if (by.has(cc)) by.get(cc).push(v); }
+    const series = {};
+    for (const [cc, arr] of by) {
+      if (!arr.length) continue;
+      arr.sort((a, b) => a - b); const n = arr.length;
+      const idx = []; if (n <= max) { for (let i = 0; i < n; i++) idx.push(i); } else { const step = (n - 2 * keepTail) / (max - 2 * keepTail); for (let i = 0; i < keepTail; i++) idx.push(i); for (let k = 0; k < max - 2 * keepTail; k++) idx.push(keepTail + Math.round(k * step)); for (let i = n - keepTail; i < n; i++) idx.push(i); }
+      const uniq = [...new Set(idx)].sort((a, b) => a - b);
+      const q = (p) => arr[Math.min(n - 1, Math.max(0, Math.round(p * (n - 1))))];
+      series[cc] = { n, x: uniq.map((i) => arr[i]), p: uniq.map((i) => (i + 1 - 0.375) / (n + 0.25)), z: uniq.map((i) => E.probit((i + 1 - 0.375) / (n + 0.25))), p01: q(0.01), p50: q(0.5), p99: q(0.99), min: arr[0], max: arr[n - 1] };
+    }
+    return { series, log, ticks: E.Q_TICKS.map((p) => ({ p, z: E.probit(p) })) };
   };
 
   /** plain-text summary (for e-mail / chat) for one module */
