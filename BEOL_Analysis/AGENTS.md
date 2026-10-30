@@ -1,7 +1,7 @@
 # BEOL_Analysis：Agent 接手文件
 
 > 給接手的 AI agent（或工程師）閱讀。讀完這份就能繼續開發，不必回頭看對話紀錄。
-> 版本：BEOL 分析戰報 **v3.8**（2026-10-30）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
+> 版本：BEOL 分析戰報 **v3.9**（2026-10-30）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
 
 ---
 
@@ -166,6 +166,7 @@ node tests/e2e_variants.js               # 21 項：沒為工具設計過的資�
 - v1.0：WAT 戰報（K-shift、點燈表、診斷、Trend、Correlation、HTML 匯出）
 - v2.0：改名 BEOL；LK 改用倍數＋log 軸；SPA 改用固定值異常比例；新增 Inline 模組（均值、W2W、WIW、徑向分布、對 WAT 的影響）
 - v2.1：點燈格只顯示數字；戰報頁可切換分組、比較欄、BSL、CIP；儀表板版面；Trend 矩陣；浮動視窗；PPT 匯出；強化不同欄名的解析；單一 Python 產生器
+- v3.9：點無白邊／透明；凸顯改 `tint()` 淡色（`visData`）；排排站 `frame(title, { comment })` comment 框＋`legendInline`；quantile 列 `maxRows: 5, aspect: 2`，窄圖時標註移到右側文字
 - v3.8：Quantile plot（`E.quantile`／`E.probit`，`qStats`／`qFig`／`renderQuantile`，`#tab-quant`，`S.qt`）取代 P-chart；`lightTables()` 共用；`sortLayer`／`layerKey`；匯入進度 `progress()`（importer `readFile(file, onStage)` Web Worker 解析）；`queuePlot` 縮圖排隊；`dataChecks` 依 pairs 列同層、鄰層限知識庫；固定值常數欄保留；機台視窗刪出現期間、confound 無註解
 - v3.7：第二種 PPT「Summary 排排站」（`buildPptStack`／`stackLayout`／`rowPng`，按鈕 `#btnPptStack`）；P-chart（v3.8 已改為 Quantile）；戰報點燈表 N 進表頭、依可用高度分頁；附錄平均分頁；測試資料 `gen_pp.py`（L_pp5／M_pp10）
 - v3.6：欄位角色——文字欄 機台／其他（`E.TOOL_RX`／`E.NOT_TOOL_RX`／`E.toolCandidates`，設定頁第 3 區「機台欄」勾選 → `cfg.toolCols`，`E.factorColumns` 只看勾選欄）；PPT K 表寬度依內容（`tw`／`kWidth`，`kTable(..., fixed)`），總覽格去片數後綴→縮字；單圖 PNG 以格子比例重畫；封面刪來源檔字

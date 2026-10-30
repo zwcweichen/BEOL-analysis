@@ -2507,7 +2507,7 @@ window.App.XLAYER = [
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
     hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' }, qt: { mode: 'abn' } });
-  App.VERSION = '3.8';
+  App.VERSION = '3.9';
   /** 知識庫建議開關（預設關）：關 = 建議檢查只列資料能互相對照的 item（同層／鄰層 inline、WAT、yield、機台），不給物理原因；開 = 加上知識庫的檢查與機制 */
   S.kbOn = !!App.store.get('rpt-kb-on', false);
   const $ = (id) => document.getElementById(id);
@@ -3118,7 +3118,7 @@ window.App.XLAYER = [
     const bShow = sample(bsl, mini ? 700 : 1500);
     const bFail = bShow.map((p) => isFail(p.y));
     data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `BSL ${c.baseline}` : `BSL ${c.baseline}（N ${bsl.length}）${it.metric === 'rate' && c0 ? `  異常 ${pct(c0.rateB)}` : ''}`, x: bShow.map((p) => p.x), y: bShow.map((p) => p.y), text: bShow.map((p) => p.w),
-      marker: { color: bFail.some(Boolean) ? bFail.map((f) => (f ? '#4b5563' : condColor(c.baseline))) : condColor(c.baseline), size: big ? 6 : mini ? 3.5 : 4.5, opacity: 0.75 }, hovertemplate: '%{text}<br>%{y}<extra>BSL</extra>', meta: bFail.some(Boolean) ? { fail: bFail } : {} }, c.baseline, 'pts'));
+      marker: { color: bFail.some(Boolean) ? bFail.map((f) => (f ? '#4b5563' : condColor(c.baseline))) : condColor(c.baseline), size: big ? 6 : mini ? 3.5 : 4.5 }, hovertemplate: '%{text}<br>%{y}<extra>BSL</extra>', meta: bFail.some(Boolean) ? { fail: bFail } : {} }, c.baseline, 'pts'));
     for (const p of c.cips) {
       const cpAll = pts.filter((q) => q.c === p), cp = mini ? sample(cpAll, 900) : cpAll;   // v3.8: thumbnails cap CIP points too (stats use every wafer)
       if (!cp.length) continue;
@@ -3126,7 +3126,7 @@ window.App.XLAYER = [
       const lab = !cell || cell.level === 'na' ? '' : `  ${shiftTxt(cell)}`;
       data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `${p}${lab}` : `CIP ${p}${lab}（N ${cpAll.length}）`, x: cp.map((q) => q.x), y: cp.map((q) => q.y), text: cp.map((q) => q.w),
         marker: { color: condColor(p), size: cp.map((q) => (isFail(q.y) ? (big ? 11 : 8.5) : big ? 8 : mini ? 5 : 7)), symbol: cp.map((q) => (isFail(q.y) ? 'diamond' : 'circle')),
-          line: { width: cp.map((q) => (isFail(q.y) ? 1.4 : 0.8)), color: cp.map((q) => (isFail(q.y) ? '#c2410c' : '#fff')) } },
+          line: { width: cp.map((q) => (isFail(q.y) ? 1.4 : 0)), color: cp.map((q) => (isFail(q.y) ? '#c2410c' : condColor(p))) } },
         hovertemplate: `%{text}<br>%{y}<extra>${esc(p)}</extra>` }, p, 'pts'));
       const cx = cp.map((q) => q.x).filter((v) => v != null), x0 = useDate ? new Date(Math.min(...cx)) : Math.min(...cx), x1 = useDate ? new Date(Math.max(...cx)) : Math.max(...cx);
       const ref = it.metric === 'fold' ? cell?.median : it.metric === 'rate' ? null : cell?.mean;
@@ -3157,7 +3157,7 @@ window.App.XLAYER = [
     for (const cc of conds) {
       const sr = Q.series[cc], isB = cc === c.baseline;
       data.push(tag({ type: 'scatter', mode: 'lines+markers', name: `${isB ? 'BSL' : 'CIP'} ${cc}（N ${sr.n}）`, x: sr.x, y: sr.z, text: sr.p.map((p) => `${(p * 100).toFixed(p < 0.01 || p > 0.99 ? 2 : 1)}%`),
-        line: { color: condColor(cc), width: mini ? 1.4 : 1.8, shape: 'linear' }, marker: { color: condColor(cc), size: isB ? (mini ? 3.5 : 4.5) : mini ? 5 : 6.5, opacity: isB ? 0.75 : 1, line: { width: isB ? 0 : 0.8, color: '#fff' } },
+        line: { color: condColor(cc), width: mini ? 1.4 : 1.8, shape: 'linear' }, marker: { color: condColor(cc), size: isB ? (mini ? 3.5 : 4.5) : mini ? 5 : 6.5 },
         hovertemplate: `%{x}<br>%{text}<extra>${esc(cc)}</extra>` }, cc, 'pts'));
     }
     const L = baseLayout(h);
@@ -3189,7 +3189,7 @@ window.App.XLAYER = [
     ioP = new IntersectionObserver((ents) => ents.forEach((en) => {
       if (!en.isIntersecting) return;
       const cell = en.target; ioP.unobserve(cell);
-      queuePlot(cell.querySelector('.plot'), () => qFig(cell.dataset.qitem, cell.dataset.qgroup, 165, { mini: true }));
+      queuePlot(cell.querySelector('.plot'), () => qFig(cell.dataset.qitem, cell.dataset.qgroup, 230, { mini: true }));
     }), { rootMargin: '300px' });
     el.querySelectorAll('.mc').forEach((x) => ioP.observe(x));
   }
@@ -3258,7 +3258,7 @@ window.App.XLAYER = [
       const col = condColor(cd);
       const shown = cd === c.baseline ? sample(rr, 4000) : rr;
       data.push(tag({ type: shown.length > 3000 ? 'scattergl' : 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd}`, x: shown.map((x) => x[xName]), y: shown.map((x) => x[yName]),
-        text: shown.map((x) => x[c.waferCol]), marker: { color: col, size: cd === c.baseline ? 5 : 8, opacity: cd === c.baseline ? 0.55 : 0.9, line: { width: cd === c.baseline ? 0 : 0.8, color: '#fff' } },
+        text: shown.map((x) => x[c.waferCol]), marker: { color: col, size: cd === c.baseline ? 5 : 8 },
         hovertemplate: '%{text}<br>x %{x}<br>y %{y}<extra></extra>' }, cd, 'pts'));
       const f = App.statsLib.linreg(rr.map((x) => tx(x[xName])), rr.map((x) => ty(x[yName])));
       stats.push({ cond: cd, ...f });
@@ -3291,7 +3291,9 @@ window.App.XLAYER = [
   }
   const resetPlotQ = () => { plotQ.gen++; plotQ.q.length = 0; };
   // ---- v3.4 live condition style: highlight on legend click, restyle colours / reorder layers on every chart currently in the page
-  const HI_DIM = 0.12;
+  const HI_DIM = 0.12;   // (legacy opacity; v3.9 dims by tint instead — see tint())
+  /** blend a #rrggbb colour towards white: tint('#1f3fbf', 0.75) → light blue (JMP's de-emphasised series look) */
+  const tint = (hex, f = 0.75) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim()); if (!m) return hex; const n = parseInt(m[1], 16); const ch = (v) => Math.round(v + (255 - v) * f); return `rgb(${ch(n >> 16)},${ch((n >> 8) & 255)},${ch(n & 255)})`; };
   /** legend click = highlight that condition (click again = back); double-click = clear all. Hiding traces is gone. */
   function bindHi(gd) {
     if (!gd || gd._hiBound || !gd.on) return; gd._hiBound = true;
@@ -3305,11 +3307,11 @@ window.App.XLAYER = [
     let touched = false;
     for (const t of gd.data) {
       const cd = t.meta && t.meta.cond; if (!cd) continue; touched = true;
-      const col = condColor(cd), role = t.meta.role;
-      if (t.marker) t.marker.color = t.meta.fail ? t.meta.fail.map((f) => (f ? '#4b5563' : col)) : col;
+      const dim = anyHi && !hi.has(cd), col = dim ? tint(condColor(cd), 0.78) : condColor(cd), role = t.meta.role;
+      if (t.marker) { t.marker.color = t.meta.fail ? t.meta.fail.map((f) => (f ? (dim ? tint('#4b5563', 0.78) : '#4b5563') : col)) : col; if (t.marker.line && t.marker.line.color && !Array.isArray(t.marker.line.color)) t.marker.line.color = col; }
       if (t.line) t.line.color = col;
-      if (role === 'box') t.fillcolor = col + '33';
-      t.opacity = anyHi && !hi.has(cd) ? HI_DIM : 1;
+      if (role === 'box') t.fillcolor = (dim ? tint(condColor(cd), 0.78) : condColor(cd)) + (dim ? '' : '33');
+      t.opacity = 1;
       if (t.showlegend !== false) t.legendrank = 1000 + visRank(cd);
     }
     if (!touched) return null;
@@ -4242,13 +4244,22 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       const conds = [[c.baseline, 'BSL'], ...c.cips.map((p) => [p, 'CIP'])];
       conds.forEach(([p, role], i) => { const y = 0.18 + i * 0.26; s.addShape(pptx.ShapeType.rect, { x: SW - 2.45, y: y + 0.05, w: 0.16, h: 0.16, fill: { color: cipHex(p) }, line: { color: cipHex(p) } }); tb(s, `${p}  ${role}`, { x: SW - 2.22, y, w: 1.75, h: 0.26, fontSize: 11, bold: true, color: cipHex(p), valign: 'middle' }); });
     };
-    const frame = (title) => {
+    const frame = (title, fo = {}) => {
       const s = pptx.addSlide(); page++; s.background = { color: 'FFFFFF' };
-      tb(s, title, { x: 2.5, y: 0.2, w: SW - 5.0, h: 0.55, fontSize: 24, bold: true, color: RED, align: 'center', fit: 'shrink' });
+      tb(s, title, { x: fo.comment ? 0.6 : 2.5, y: 0.2, w: fo.comment ? SW - 1.2 : SW - 5.0, h: 0.55, fontSize: 24, bold: true, color: RED, align: 'center', fit: 'shrink' });
       s.addShape(pptx.ShapeType.rect, { x: 0, y: SH - 0.32, w: SW, h: 0.32, fill: { color: '262626' }, line: { color: '262626' } });
       tb(s, String(page), { x: 0, y: SH - 0.3, w: SW, h: 0.28, fontSize: 10, color: 'FFFFFF', align: 'center', valign: 'middle' });
-      legend(s);
+      if (fo.comment) {   // v3.9: engineer's comment box under the title (stack pages); the condition legend moves down beside the group header
+        s.addShape(pptx.ShapeType.rect, { x: 0.6, y: 0.82, w: SW - 1.2, h: 0.5, fill: { color: 'FFFFFF' }, line: { color: '000000', width: 1 } });
+        s.addText([{ text: '● ', options: { color: RED, fontSize: 9, bold: true } }, { text: 'Wording', options: { color: INK, fontSize: 13 } }], { x: 0.72, y: 0.82, w: SW - 1.44, h: 0.5, fontFace: FONT, margin: 0, valign: 'middle' });
+      } else legend(s);
       return s;
+    };
+    /** small inline legend: ■ A廠 BSL   ■ B廠 CIP (one line, 9pt) */
+    const legendInline = (s, x, y, w) => {
+      const conds = [[c.baseline, 'BSL'], ...c.cips.map((p) => [p, 'CIP'])];
+      const runs = conds.flatMap(([p, role], i) => [{ text: '■ ', options: { color: cipHex(p), fontSize: 11, bold: true } }, { text: `${p}  ${role}${i < conds.length - 1 ? '      ' : ''}`, options: { color: cipHex(p), fontSize: 9, bold: true } }]);
+      s.addText(runs, { x, y, w, h: 0.26, fontFace: FONT, margin: 0, valign: 'middle', fit: 'shrink' });
     };
     const section = (s, t, x, y, w) => { s.addShape(pptx.ShapeType.rect, { x, y: y + 0.07, w: 0.16, h: 0.16, fill: { color: 'FFFFFF' }, line: { color: BLUE, width: 1.5 } }); tb(s, t, { x: x + 0.26, y, w: w - 0.26, h: 0.3, fontSize: 14, bold: true, color: BLUE, underline: { style: 'sng' }, fit: 'shrink' }); };
     const bullets = (s, items, y, h) => s.addText(items.flatMap((runs, i) => [{ text: '● ', options: { color: RED, fontSize: 9, bold: true } }, ...runs.map((q) => ({ text: q.t, options: { color: q.c || INK, bold: true, fontSize: 13, breakLine: !!q.br } })), ...(i < items.length - 1 ? [{ text: '', options: { breakLine: true } }] : [])]),
@@ -4262,7 +4273,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       L.xaxis.showticklabels = opts.xAlways || !!lastRow;
       if (!opts.keepY) L.yaxis.nticks = h < 1.0 ? 3 : 4; else if (shortRow) { L.yaxis.tickvals = [-2.326, 0, 2.326]; L.yaxis.ticktext = ['0.01', '0.5', '0.99']; }
       L.plot_bgcolor = '#fafbfc';
-      L.margin = { l: Math.round(fs * 3.4), r: 10, t: Math.round(fs * (shortRow ? 1.4 : 2.4)), b: lastRow || opts.xAlways ? Math.round(fs * 1.6) : 10 };
+      L.margin = { l: Math.round(fs * 3.4), r: 10, t: annos.length ? Math.round(fs * (shortRow ? 1.4 : 2.4)) : 8, b: lastRow || opts.xAlways ? Math.round(fs * 1.6) : 10 };
       L.annotations = annos.flatMap((a, i) => { const x = (i + 1) / (annos.length + 1); return shortRow ? [{ text: `<b>${a.t}</b>${a.n != null ? ` <span style="color:#8a94a6">(${a.n})</span>` : ''}`, x, y: 1, xref: 'paper', yref: 'paper', xanchor: 'center', yanchor: 'bottom', yshift: 2, showarrow: false, font: { size: fs + 1, color: a.c, family: 'Arial' } }] : [
         { text: `<b>${a.t}</b>`, x, y: 1, xref: 'paper', yref: 'paper', xanchor: 'center', yanchor: 'bottom', yshift: fs * 0.95, showarrow: false, font: { size: fs + 2, color: a.c, family: 'Arial' } },
         ...(a.n != null ? [{ text: `(${a.n})`, x, y: 1, xref: 'paper', yref: 'paper', xanchor: 'center', yanchor: 'bottom', yshift: 1, showarrow: false, font: { size: fs - 4, color: '#8a94a6', family: 'Arial' } }] : [])]; });
@@ -4272,16 +4283,19 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     };
     /** one stacked page set: items in layer order, every group its own column(s); makeRow({it, g}) → {fig, annos, right:[{p,t,c}]} */
     const stack = async (its, title, makeRow, xTitle, opts = {}) => {
-      const { rows, pages } = stackLayout(r.groups.map((g) => ({ name: g, items: its })));
+      const { rows, pages } = stackLayout(r.groups.map((g) => ({ name: g, items: its })), opts.maxRows || 7);
       if (!pages.length) return;
-      const top = 1.0, bottom = SH - 0.45, gap = 0.3, nameW = 1.3, rightW = c.cips.length > 2 ? 1.15 : 0.9, pad = 0.06, head = c.groupCol ? 0.3 : 0;
-      const colW = (SW - 1.2 - gap) / 2, chartW = colW - nameW - rightW - pad * 2;
+      // title 0.2–0.75 → comment box 0.82–1.32 → legend / group line 1.42–1.68 → rows
+      const top = 1.42, bottom = SH - 0.45, gap = 0.3, nameW = 1.3, rightW = c.cips.length > 2 ? 1.15 : 0.9, pad = 0.06, head = 0.3;
+      const colW = (SW - 1.2 - gap) / 2, chartW0 = colW - nameW - rightW - pad * 2;
       const rowH = Math.min(1.5, (bottom - top - head - 0.3) / rows);
+      const chartW = opts.aspect ? Math.min(chartW0, (rowH - 0.06) * opts.aspect) : chartW0;   // quantile rows: narrower (≈ 2:1) so tails stand out
       for (let pg = 0; pg < pages.length; pg++) {
-        const s = frame(`${title}${pages.length > 1 ? `（${pg + 1}/${pages.length}）` : ''}`);
+        const s = frame(`${title}${pages.length > 1 ? `（${pg + 1}/${pages.length}）` : ''}`, { comment: true });
         for (let ci = 0; ci < pages[pg].length; ci++) {
           const col = pages[pg][ci], x0 = 0.6 + ci * (colW + gap);
-          if (head) tb(s, `${col.g}${col.part ? `（${col.part}）` : ''}`, { x: x0, y: top, w: colW, h: head, fontSize: 13, bold: true, color: BLUE, align: 'left', valign: 'middle' });
+          tb(s, c.groupCol ? `${col.g}${col.part ? `（${col.part}）` : ''}` : '', { x: x0, y: top, w: nameW, h: head, fontSize: 12, bold: true, color: BLUE, align: 'left', valign: 'middle', fit: 'shrink' });
+          if (ci === 0) legendInline(s, x0 + nameW + pad, top, chartW + rightW);
           // name column drawn as one contiguous table (sample deck look): shared borders, no gaps
           const n = col.items.length, yTop = top + head;
           s.addTable(col.items.map((it) => [{ text: [{ text: short(it.name), options: { bold: true, fontSize: rowH < 0.95 ? 10 : 11.5, color: INK, breakLine: !!unit(it.name) } }, ...(unit(it.name) ? [{ text: unit(it.name), options: { fontSize: 8.5, color: MUTED } }] : [])], options: { align: 'center', valign: 'middle', fill: { color: 'F2F2F2' } } }]),
@@ -4289,10 +4303,13 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
           for (let k = 0; k < n; k++) {
             const it = col.items[k], g = col.g, last = k === n - 1, y0 = yTop + k * rowH, h = rowH - 0.06;
             const { fig, annos, right } = makeRow({ it, g });
-            if (fig) { const png = await rowPng(fig, chartW, h, annos, last, opts); s.addImage({ data: png, x: x0 + nameW + pad, y: y0 + 0.03, w: chartW, h }); }
+            // narrow chart (quantile rows): the mean／P50 readouts move out of the chart into the right-hand text, one line per condition
+            const narrow = chartW < 2.6, rw = narrow ? colW - nameW - chartW - pad * 2 : rightW;
+            if (fig) { const png = await rowPng(fig, chartW, h, narrow ? [] : annos, last, opts); s.addImage({ data: png, x: x0 + nameW + pad, y: y0 + 0.03, w: chartW, h }); }
             else tb(s, '無資料', { x: x0 + nameW + pad, y: y0, w: chartW, h, fontSize: 10, color: MUTED, align: 'center', valign: 'middle' });
-            s.addText(right.flatMap((q, i) => [...(c.cips.length > 1 ? [{ text: `${q.p} `, options: { fontSize: 8.5, color: cipHex(q.p), bold: true } }] : []), { text: q.t, options: { fontSize: right.length > 2 ? 11 : 13, bold: true, color: q.c, fontFace: 'Arial', breakLine: i < right.length - 1 } }]),
-              { x: x0 + nameW + pad * 2 + chartW, y: y0, w: rightW, h: rowH, fontFace: FONT, margin: 0, align: 'left', valign: 'middle', fit: 'shrink' });
+            const annoRuns = narrow ? annos.map((a) => ({ text: `${a.t}${a.n != null ? ` (${a.n})` : ''}`, options: { fontSize: 9, bold: true, color: a.c.replace('#', '').toUpperCase(), fontFace: 'Arial', breakLine: true } })) : [];
+            s.addText([...annoRuns, ...right.flatMap((q, i) => [...(c.cips.length > 1 ? [{ text: `${q.p} `, options: { fontSize: 8.5, color: cipHex(q.p), bold: true } }] : []), { text: q.t, options: { fontSize: right.length > 2 ? 11 : 13, bold: true, color: q.c, fontFace: 'Arial', breakLine: i < right.length - 1 } }])],
+              { x: x0 + nameW + pad * 2 + chartW, y: y0, w: rw, h: rowH, fontFace: FONT, margin: 0, align: 'left', valign: 'middle', fit: 'shrink' });
             if (last) tb(s, xTitle(it), { x: x0 + nameW + pad, y: y0 + rowH + 0.01, w: chartW, h: 0.2, fontSize: 8.5, color: MUTED, align: 'center' });
           }
         }
@@ -4336,7 +4353,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
         const annos = [{ t: sB ? `P50 ${f4(sB.p50)}` : '—', n: sB ? sB.n : null, c: condColor(c.baseline) }, ...c.cips.map((p) => { const sq = Q.series[p]; return { t: sq ? `P50 ${f4(sq.p50)}` : '—', n: sq ? sq.n : null, c: condColor(p) }; })];
         const right = c.cips.map((p) => { const x = cells[p]; const sd = x.sdRatio != null && x.level !== 'na' ? ` σ×${x.sdRatio.toFixed(1)}` : ''; return { p, t: `${shiftTxt(x)}${sd}`, c: LVC[x.level] }; });
         return { fig, annos, right };
-      }, (it) => `${short(it.name)}${unit(it.name) ? ` (${unit(it.name)})` : ''}${it.metric === 'fold' ? '，log' : ''}`, { xAlways: true, keepY: true });
+      }, (it) => `${short(it.name)}${unit(it.name) ? ` (${unit(it.name)})` : ''}${it.metric === 'fold' ? '，log' : ''}`, { xAlways: true, keepY: true, maxRows: 5, aspect: 2.0 });
     }
     return pptx;
   }
