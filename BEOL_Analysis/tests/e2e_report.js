@@ -51,9 +51,9 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
   ok(near(W.rc.k, R.rc_TMTQ11) && W.rc.level === 'orange', `Rc_V12@TMTQ11 K=${W.rc.k?.toFixed(2)} (pandas ${R.rc_TMTQ11.toFixed(2)}) orange`);
   ok(near(W.con.k, R.con_TMWF54) && W.con.level === 'yellow', `Con_M13@TMWF54 K=${W.con.k?.toFixed(2)} (pandas ${R.con_TMWF54.toFixed(2)}) yellow`);
   ok(near(W.lk.fold, R.lk_TMRX12) && W.lk.level === 'yellow', `LK_M12@TMRX12 fold ×${W.lk.fold?.toFixed(2)} (pandas ×${R.lk_TMRX12.toFixed(2)}) yellow (×2–×5)`);
-  ok(near(W.spa12.rateC, R.spa12_TMRX12[0], 1e-6) && near(W.spa12.rateB, R.spa12_TMRX12[1], 1e-6) && W.spa12.level === 'orange',
-    `SPA_M12@TMRX12 fail ${(W.spa12.rateC * 100).toFixed(1)}% vs BSL ${(W.spa12.rateB * 100).toFixed(1)}% (pandas match) orange`);
-  ok(near(W.spa13.rateC, R.spa13_TMRX12[0], 1e-6) && W.spa13.level === 'orange', `SPA_M13@TMRX12 fail ${(W.spa13.rateC * 100).toFixed(1)}% orange`);
+  ok(near(W.spa12.rateC, R.spa12_TMRX12[0], 1e-6) && near(W.spa12.rateB, R.spa12_TMRX12[1], 1e-6) && W.spa12.level === 'na',
+    `SPA_M12@TMRX12 stray ${(W.spa12.rateC * 100).toFixed(1)}% vs BSL ${(W.spa12.rateB * 100).toFixed(1)}% (pandas match) → grey, engineer judges (v3.10)`);
+  ok(near(W.spa13.rateC, R.spa13_TMRX12[0], 1e-6) && W.spa13.level === 'na', `SPA_M13@TMRX12 stray ${(W.spa13.rateC * 100).toFixed(1)}% → grey`);
   ok(W.spaNa.level === 'na' && /無資料/.test(W.spaNa.reason), `SPA_M13@TMRF89 grey with reason: ${W.spaNa.reason}`);
 
   // wording from the diagnosis engine (shown in the HL detail pane)
@@ -61,16 +61,16 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
   words.forEach((w) => console.log('   ▸ ' + w.slice(0, 200)));
   ok(words.some((w) => /Rc_V12/.test(w) && /V12 CD/.test(w) && /同向/.test(w)), 'Rc finding cites V12 CD as consistent inline evidence');
   ok(words.some((w) => /LK_M12/.test(w) && /×3\.0/.test(w) && /M12 CD/.test(w)), 'LK finding shows fold and cites M12 CD');
-  ok(words.some((w) => /SPA_M12/.test(w) && /異常比例/.test(w) && /M12 CD/.test(w)), 'SPA finding (fail rate) cites M12 CD');
+  ok(!words.some((w) => /SPA_M12/.test(w)), 'fixed-value items never become findings (v3.10)');
 
   // ---- dashboard: lights show only the number (no arrow, no N)
   const L = await page.evaluate(() => [...document.querySelectorAll('#report .lt td.lc')].map((td) => td.textContent.trim()));
-  ok(L.length === 32 && L.every((t) => /^([+−]\d+\.\dσ|×\d+\.\d|[+−]\d+\.\d%pt|—|>[+−]10σ)$/.test(t)), `overview lights show one number only (${L.slice(0, 6).join(' ')} …)`);
+  ok(L.length === 32 && L.every((t) => /^([+−]\d+\.\dσ|×\d+\.\d|=\S+|\d+片≠\S+|—|>[+−]10σ)$/.test(t)), `overview lights show one number only (${L.slice(0, 6).join(' ')} …)`);
   const dash = await page.evaluate(() => {
     const ov = document.querySelector('.pane.ov').getBoundingClientRect(), hl = document.querySelector('.pane.hl').getBoundingClientRect();
     return { side: hl.left > ov.right - 2, rows: document.querySelectorAll('.hl-row').length, det: document.querySelectorAll('#hlDet .js-plotly-plot').length };
   });
-  ok(dash.side && dash.rows === 6 && dash.det === 2, `dashboard: overview table and HL pane side by side, ${dash.rows} HL rows, ${dash.det} detail charts`);
+  ok(dash.side && dash.rows === 3 && dash.det === 2, `dashboard: overview table and HL pane side by side, ${dash.rows} HL rows, ${dash.det} detail charts`);
   // HL navigation: pick the LK item → detail shows log-axis trend
   const lkIdx = await page.evaluate(() => App.rpt.res.findings.wat.findIndex((f) => f.cell.item.name.startsWith('LK_M12')));
   await page.click(`.hl-row[data-hl="${lkIdx}"]`);
@@ -109,13 +109,13 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
 
   const txt = await page.evaluate(() => App.rptUI.summary());
   console.log('--- WAT summary ---\n' + txt.split('\n').slice(0, 6).join('\n'));
-  ok(/LK 綠 ≤ ×2/.test(txt) && /SPA/.test(txt), 'summary states LK × and SPA thresholds');
+  ok(!/燈號：/.test(txt) && !/資料品質/.test(txt), 'summary carries no threshold / data-quality explanation lines (v3.11)');
 
   // ---- trend matrix
   await page.click('#tabs button[data-tab=trend]');
   await page.waitForTimeout(1500);
   const tc = await page.evaluate(() => ({ rows: document.querySelectorAll('.tmx .rh').length, cells: document.querySelectorAll('.tmx .mc').length, drawn: document.querySelectorAll('.tmx .mc .js-plotly-plot').length }));
-  ok(tc.rows === 5 && tc.cells === 20 && tc.drawn > 0, `trend matrix (abnormal): ${tc.rows} items × 4 groups, ${tc.drawn} drawn lazily`);
+  ok(tc.rows === 3 && tc.cells === 12 && tc.drawn > 0, `trend matrix (abnormal): ${tc.rows} items × 4 groups, ${tc.drawn} drawn lazily`);
   await page.click('.chip[data-mode=all]'); await page.waitForTimeout(600);
   ok(await page.evaluate(() => document.querySelectorAll('.tmx .mc').length === 32), 'trend matrix all WAT: 8 × 4 = 32');
   await page.click('.tmx .mc >> nth=0');
@@ -157,7 +157,7 @@ const REF = JSON.parse(execSync(`python3 "${path.join(__dirname, 'expected_beol.
   await dl.saveAs(out);
   const html = fs.readFileSync(out, 'utf8');
   const imgs = (html.match(/<img src="data:image\/png;base64,/g) || []).length;
-  ok(imgs >= 10 && !/plotly\.min/.test(html), `exported standalone HTML: ${(html.length / 1e6).toFixed(2)} MB, ${imgs} embedded charts`);
+  ok(imgs >= 6 && !/plotly\.min/.test(html), `exported standalone HTML: ${(html.length / 1e6).toFixed(2)} MB, ${imgs} embedded charts`);
 
   // ---- PPT export (WAT + Inline columns of the same file)
   const [dp] = await Promise.all([page.waitForEvent('download', { timeout: 180000 }), page.click('#btnPpt')]);
@@ -177,7 +177,7 @@ print(json.dumps(out,ensure_ascii=False))" "${pout}"`).toString());
   ok(has(/WAT 點燈表/, (x) => x.tables === 1), 'PPT: WAT light table (native table)');
   // v3.3 design language: title = item + shift; HL detail = trend + partner (2 pictures) + 同組其他 item table; overview = abnormal 2×2 then green 3×3 appendix; conclusions page last
   ok(has(/^Rc_V12 @ TMTQ11：FAB15 \+2\.3σ$/, (x) => x.pics === 2 && x.tables === 1), 'PPT: HL detail titled "item @ group：CIP shift", trend + correlation + 同組其他 item table');
-  ok(has(/WAT 總覽 trend ｜ TMRX12/, (x) => x.pics === 3) && has(/WAT 總覽 trend（附錄：綠燈 item）（1\/3）/, (x) => x.pics === 9) && !has(/附錄：綠燈 item） ｜/, () => true), 'PPT: overview trend split — abnormal items per group (3 charts @ TMRX12), green items pooled across groups into 3×3 appendix pages');
+  ok(has(/WAT 總覽 trend ｜ TMRX12/, (x) => x.pics === 1) && has(/WAT 總覽 trend（附錄：綠燈 item）（1\/\d）/, (x) => x.pics >= 7) && !has(/附錄：綠燈 item） ｜/, () => true), 'PPT: overview trend split — abnormal items per group (3 charts @ TMRX12), green items pooled across groups into 3×3 appendix pages');
   ok(has(/Inline 點燈表/, (x) => x.tables === 1) && has(/^M13 THK @ TMWF54/, (x) => x.pics >= 1) && has(/Inline 總覽 trend/, (x) => x.pics >= 1), 'PPT: Inline light table, merged HL detail and overview trend');
   ok(info[info.length - 1].title === '結論' && info[0].title.startsWith('BEOL 分析戰報'), 'PPT: cover first, 結論 last (never ends on a chart page)');
 

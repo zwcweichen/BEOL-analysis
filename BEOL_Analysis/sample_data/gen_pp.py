@@ -50,3 +50,26 @@ def build(n_items, out, start='2026-06-01', freq='2D', spa=False):
 build(5, os.path.join(HERE, 'variants', 'L_pp5.xlsx'))
 build(10, os.path.join(HERE, 'variants', 'M_pp10.xlsx'))
 build(10, os.path.join(HERE, 'variants', 'N_pp30k.xlsx'), start='2026-03-01', freq='1D', spa=True)   # ~31k rows, + SPA fixed-value item
+
+
+def build_wat15(out):
+    """O_wat15.xlsx — one CIP (FAB15) vs BSL (0FAB18), no product column, 15 WAT (Con M7–M11, Rc V6–V10, SPA M7–M11 fixed 20) + 5 inline.
+    Rc_V6 +1.2σ, Rc_V7 +1.1σ; SPA_M9 has 6 stray wafers in the CIP (→ grey, engineer judges); everything else matches."""
+    rows = []; lotn = 0
+    for k, d in enumerate(pd.date_range('2026-04-01', '2026-10-20', freq='1D')):
+        for cond, n in (('0FAB18', 15), ('FAB15', 10)):
+            lotn += 1; L = f'W{lotn:04d}'
+            for i in range(1, n + 1):
+                t = d + pd.Timedelta(hours=float(rng.uniform(0, 24)))
+                r = {'WaferID': f'{L}.{i:02d}', 'Lot': L, 'Fab': cond, 'WAT_DATE': t}
+                for m in range(7, 12): r[f'Con_M{m}'] = round(rng.normal(0.58, 0.03), 4)
+                for v in range(6, 11): r[f'Rc_V{v}'] = round(rng.normal(9.8, 0.4) + (0.48 if cond == 'FAB15' and v == 6 else 0.44 if cond == 'FAB15' and v == 7 else 0), 3)
+                for m in range(7, 12): r[f'SPA_M{m}'] = 20.0
+                if cond == 'FAB15' and rng.uniform() < 0.002: r['SPA_M9'] = round(float(rng.uniform(3, 18)), 2)
+                for m in range(7, 10): r[f'M{m} CD AEI'] = round(rng.normal(44, 1.0), 2); r[f'M{m} THK'] = round(rng.normal(1480, 26), 1)
+                rows.append(r)
+    df = pd.DataFrame(rows); df.to_excel(out, index=False)
+    print(os.path.basename(out), df.shape, df.groupby('Fab').size().to_dict(), 'SPA_M9 stray', int((df.SPA_M9 != 20).sum()))
+
+
+build_wat15(os.path.join(HERE, 'variants', 'O_wat15.xlsx'))

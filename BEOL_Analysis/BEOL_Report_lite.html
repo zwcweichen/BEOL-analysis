@@ -2056,12 +2056,12 @@ window.App.XLAYER = [
           } else if (it.metric === 'rate') {
             const tol = Math.max(1e-6, Math.abs(it.target) * 0.005);
             const fail = (a) => a.filter((x) => Math.abs(x - it.target) > tol).length;
+            // v3.10 fixed-value items (SPA …): the CIP is green when every wafer sits on the value; any wafer off it → grey, the engineer judges (no % threshold, never an HL)
             if (s.n && b.n) {
-              cell.rateC = fail(vc[c]) / s.n; cell.rateB = fail(vb) / b.n; cell.reason = '';
-              cell.diff = (cell.rateC - cell.rateB) * 100;
-              cell.dir = Math.sign(cell.diff);
-              cell.level = cell.diff <= th.rG ? 'green' : cell.diff <= th.rO ? 'yellow' : 'orange';
-              cell.text = `異常 ${pct(cell.rateC)}`;
+              cell.failC = fail(vc[c]); cell.failB = fail(vb); cell.rateC = cell.failC / s.n; cell.rateB = cell.failB / b.n;
+              cell.diff = (cell.rateC - cell.rateB) * 100; cell.dir = 0;
+              if (cell.failC === 0) { cell.level = 'green'; cell.reason = ''; cell.text = `= ${it.target}`; }
+              else { cell.level = 'na'; cell.reason = `${cell.failC} 片 ≠ ${it.target}`; cell.text = `${cell.failC} 片 ≠ ${it.target}`; }
             } else { cell.level = 'na'; cell.reason = reason || 'BSL 無資料'; }
           } else {
             cell.dir = Math.sign(k || 0);
@@ -2461,10 +2461,6 @@ window.App.XLAYER = [
     const cnt = res.cnt[mode], fs = res.findings[mode];
     L.push(`【BEOL ${E.MOD[mode] || mode} 戰報】${cfg.cips.join('、')}（CIP） vs ${cfg.baseline}（BSL）${meta?.file ? `　資料：${meta.file}` : ''}`);
     if (res.dateRange) L.push(`期間：${App.fmtDate(res.dateRange[0]).slice(0, 10)} ～ ${App.fmtDate(res.dateRange[1]).slice(0, 10)}　wafer 數：${Object.entries(res.nWafer).map(([c, n]) => `${c} ${n}`).join('、')}`);
-    L.push(mode === 'wat'
-      ? `燈號：一般 item 綠 ≤ ${th.kG}σ、橘 > ${th.kO}σ；LK 綠 ≤ ×${th.fG}、橘 > ×${th.fO}；SPA 異常率比 BSL 多 綠 ≤ ${th.rG}%、橘 > ${th.rO}%`
-      : mode === 'inline' ? `燈號：均值 綠 ≤ ${th.kG}σ、橘 > ${th.kO}σ；變異 σ 倍數 綠 ≤ ×${th.sG}、橘 > ×${th.sO}`
-      : `燈號：K 綠 ≤ ${th.kG}σ、橘 > ${th.kO}σ（yield 以 wafer 為單位）`);
     L.push(`結果：綠 ${cnt.green}、黃 ${cnt.yellow}、橘 ${cnt.orange}${cnt.na ? `、無法判定 ${cnt.na}` : ''}${mode === 'inline' ? `；變異異常 ${res.varCnt.orange + res.varCnt.yellow}` : ''}`);
     if (!fs.length) L.push('結論：全部在綠燈範圍內，CIP 與 BSL match。');
     // v3.2: a check sentence that every HL repeats is printed once at the end; an explanatory sentence (what 片內 σ means) once only
@@ -2475,7 +2471,7 @@ window.App.XLAYER = [
       const c = f.cell;
       L.push(`${i + 1}. ${f.dx.title}`);
       if (f.type === 'mean') {
-        if (c.metric === 'rate') L.push(`   異常率 ${E.pct(c.rateC)} vs BSL ${E.pct(c.rateB)}（固定值 ${c.item.target}，N ${c.n} / ${c.bn}）`);
+        if (c.metric === 'rate') L.push(`   固定值 ${c.item.target}：${c.failC ? `${c.failC} 片偏離` : '全部相符'} vs BSL ${c.failB ? `${c.failB} 片偏離` : '全部相符'}（N ${c.n} / ${c.bn}）`);
         else if (c.metric === 'fold') L.push(`   median ${f4(c.median)} vs BSL ${f4(c.bmedian)}（N ${c.n} / ${c.bn}）`);
         else L.push(`   ${c.cip} mean ${f4(c.mean)} vs BSL ${f4(c.bmean)}（N ${c.n} / ${c.bn}）`);
       }
@@ -2489,8 +2485,7 @@ window.App.XLAYER = [
     });
     if (common.length) L.push(`建議檢查（全部 HL 共同）：${common.join('；')}`);
     if (meta?.kbOn) L.push(RU().kbVersion());
-    const dq = E.dataQualityLines(res, cfg, mode);
-    if (dq.length) L.push(`資料品質：${dq.join('；')}`);
+
     return L.join('\n');
   };
 })();
@@ -2507,7 +2502,7 @@ window.App.XLAYER = [
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
     hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' }, qt: { mode: 'abn' } });
-  App.VERSION = '3.9';
+  App.VERSION = '3.11';
   /** 知識庫建議開關（預設關）：關 = 建議檢查只列資料能互相對照的 item（同層／鄰層 inline、WAT、yield、機台），不給物理原因；開 = 加上知識庫的檢查與機制 */
   S.kbOn = !!App.store.get('rpt-kb-on', false);
   const $ = (id) => document.getElementById(id);
@@ -2541,7 +2536,7 @@ window.App.XLAYER = [
   const LVZH = { green: '綠', yellow: '黃', orange: '橘', na: '—' };
   const isAbnL = (l) => l === 'yellow' || l === 'orange';
   /** the one number shown in a light: K (σ), fold (×) or fail-rate difference (%pt) */
-  const shiftTxt = (x) => (x.level === 'na' ? '—' : x.metric === 'fold' ? `×${x.fold.toFixed(1)}` : x.metric === 'rate' ? `${x.diff >= 0 ? '+' : '−'}${Math.abs(x.diff).toFixed(1)}%pt` : fmtK(x.k));
+  const shiftTxt = (x) => (x.metric === 'rate' ? (x.level === 'na' ? (x.failC ? `${x.failC}片≠${f4(x.item.target)}` : '—') : `=${f4(x.item.target)}`) : x.level === 'na' ? '—' : x.metric === 'fold' ? `×${x.fold.toFixed(1)}` : fmtK(x.k));
   const itemOf = (name) => S.cfg.items.find((i) => i.name === name);
   const allFindings = () => E.KINDS.flatMap((k) => S.res.findings[k]);
   const varTxt = (f) => `${f.which === 'wiw' ? '片內' : 'W2W'} σ ×${(f.which === 'wiw' ? f.cell.wiwRatio : f.cell.sdRatio).toFixed(1)}`;
@@ -2815,7 +2810,7 @@ window.App.XLAYER = [
     const rows = S.mode === 'wat'
       ? `<span class="kset">｜ K <span class="pill green">綠</span> ≤ ${inp('kG')} σ <span class="pill orange">橘</span> > ${inp('kO')} σ</span>
          ${hasMetric('fold') ? `<span class="kset">｜ LK 倍數 <span class="pill green">綠</span> ≤ ×${inp('fG')} <span class="pill orange">橘</span> > ×${inp('fO')}</span>` : ''}
-         ${hasMetric('rate') ? `<span class="kset">｜ SPA 異常率差 <span class="pill green">綠</span> ≤ ${inp('rG')}%pt <span class="pill orange">橘</span> > ${inp('rO')}%pt</span>` : ''}`
+         `
       : S.mode === 'inline' ? `<span class="kset">｜ K <span class="pill green">綠</span> ≤ ${inp('kG')} σ <span class="pill orange">橘</span> > ${inp('kO')} σ</span>
          <span class="kset">｜ 變異 σ 倍數 <span class="pill green">綠</span> ≤ ×${inp('sG')} <span class="pill orange">橘</span> > ×${inp('sO')}</span>`
       : `<span class="kset">｜ K <span class="pill green">綠</span> ≤ ${inp('kG')} σ <span class="pill orange">橘</span> > ${inp('kO')} σ</span><span class="muted">｜ yield 以 wafer 為單位，低於 BSL 為壞</span>`;
@@ -2969,7 +2964,7 @@ window.App.XLAYER = [
     if (x.level === 'na') return x.reason;
     const n = `N ${x.n} / BSL ${x.bn}${x.low ? '（CIP 少於 5 片）' : ''}`;
     if (x.metric === 'fold') return `${p} median ${f4(x.median)} vs BSL ${f4(x.bmedian)}　${n}`;
-    if (x.metric === 'rate') return `${p} 異常 ${pct(x.rateC)} vs BSL ${pct(x.rateB)}（固定值 ${f4(it.target)}）　${n}`;
+    if (x.metric === 'rate') return `${p} ${x.failC ? `${x.failC} 片 ≠ ${f4(it.target)}` : `全部 = ${f4(it.target)}`}（BSL ${x.failB ? `${x.failB} 片 ≠` : '全部 ='} ${f4(it.target)}）　${n}`;
     return `${p} mean ${f4(x.mean)} vs BSL ${f4(x.bmean)}　${n}`;
   }
   /** ---- adaptive density of the overview table ----
@@ -3008,7 +3003,7 @@ window.App.XLAYER = [
     let body = '';
     for (const [cat, its] of byCat) {
       const m = its[0].metric, open = !S.collapsed.has(`${kind}|${cat}`);
-      const unitNote = view === 'var' ? '×' : m === 'fold' ? '×（median 倍數）' : m === 'rate' ? `%pt（固定值 ${f4(its[0].target)}）` : 'σ';
+      const unitNote = view === 'var' ? '×' : m === 'fold' ? '×（median 倍數）' : m === 'rate' ? `固定值 ${f4(its[0].target)}` : 'σ';
       const nAbn = its.filter((it) => rowAbn(it, view)).length;
       body += `<tr class="cat ${open ? '' : 'closed'}" data-cat="${esc(`${kind}|${cat}`)}" title="點一下收合／展開"><td colspan="${ncol}"><i class="tri">${open ? '▾' : '▸'}</i>${esc(RU.byId(cat).label)}<span>　${esc(unitNote)}</span>${!open ? `<span class="muted">　${its.length} 個 item${nAbn ? `，<b class="o">${nAbn} 個異常</b>` : ''}</span>` : ''}</td></tr>`;
       if (!open) {
@@ -3183,7 +3178,7 @@ window.App.XLAYER = [
         <div class="th corner">${esc(c.groupCol ? `${c.groupCol} →` : '')}</div>${G.map((g) => `<div class="th">${esc(c.groupCol ? g : `${c.cips.join('、')} vs ${c.baseline}`)}</div>`).join('')}
         ${list.map((it) => `<div class="rh ${itemWorst(it, mode)}"><b>${esc(short(it.name))}</b><span>${esc(unit(it.name))}</span><span>${esc(RU.byId(it.cat).label.split('（')[0])}${it.metric === 'fold' ? '・log 軸' : ''}</span></div>` +
           G.map((g) => { const x0 = r.cells[it.name][g];
-            return `<div class="mc ${cellWorst(x0, it.kind)}" data-qitem="${esc(it.name)}" data-qgroup="${esc(g)}" data-item="${esc(it.name)}" data-group="${esc(g)}" data-cip="${esc(c.cips[0])}" title="點擊放大"><div class="mh">${c.cips.map((p) => `<span class="pill ${x0[p].level}">${c.cips.length > 1 ? `${esc(p)} ` : ''}${esc(shiftTxt(x0[p]))}</span>${x0[p].sdRatio != null && x0[p].level !== 'na' ? `<span class="pill ${x0[p].sdLevel || 'na'}">σ ×${x0[p].sdRatio.toFixed(1)}</span>` : ''}`).join('')}</div><div class="plot"></div></div>`; }).join('')).join('')}</div>` : `<div class="empty">目前沒有黃燈或橘燈的 ${MOD[mode]} item。切換到「全部 ${MOD[mode]}」可以看全部 quantile plot。</div>`}`;
+            return `<div class="mc ${cellWorst(x0, it.kind)}" data-qitem="${esc(it.name)}" data-qgroup="${esc(g)}" data-item="${esc(it.name)}" data-group="${esc(g)}" data-cip="${esc(c.cips[0])}" title="點擊放大"><div class="mh">${c.cips.map((p) => `<span class="pill ${x0[p].level}">${c.cips.length > 1 ? `${esc(p)} ` : ''}${esc(shiftTxt(x0[p]))}</span>`).join('')}</div><div class="plot"></div></div>`; }).join('')).join('')}</div>` : `<div class="empty">目前沒有黃燈或橘燈的 ${MOD[mode]} item。切換到「全部 ${MOD[mode]}」可以看全部 quantile plot。</div>`}`;
     el.querySelectorAll('[data-qmode]').forEach((x) => (x.onclick = () => { S.qt.mode = x.dataset.qmode; renderQuantile(); }));
     if (ioP) ioP.disconnect();
     ioP = new IntersectionObserver((ents) => ents.forEach((en) => {
@@ -3256,8 +3251,8 @@ window.App.XLAYER = [
       const rr = rows.filter((x) => r.cOf(x) === cd);
       if (!rr.length) continue;
       const col = condColor(cd);
-      const shown = cd === c.baseline ? sample(rr, 4000) : rr;
-      data.push(tag({ type: shown.length > 3000 ? 'scattergl' : 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd}`, x: shown.map((x) => x[xName]), y: shown.map((x) => x[yName]),
+      const shown = sample(rr, cd === c.baseline ? 4000 : 3000);   // v3.10: SVG for every condition (scattergl sits on a canvas under the SVG layer, so a 10k-wafer CIP could never be dragged above the BSL); the fit uses all rows
+      data.push(tag({ type: 'scatter', mode: 'markers', name: `${cd === c.baseline ? 'BSL' : 'CIP'} ${cd}`, x: shown.map((x) => x[xName]), y: shown.map((x) => x[yName]),
         text: shown.map((x) => x[c.waferCol]), marker: { color: col, size: cd === c.baseline ? 5 : 8 },
         hovertemplate: '%{text}<br>x %{x}<br>y %{y}<extra></extra>' }, cd, 'pts'));
       const f = App.statsLib.linreg(rr.map((x) => tx(x[xName])), rr.map((x) => ty(x[yName])));
@@ -3429,10 +3424,9 @@ ${linkChip()}</div>`;
               ${r.groups.length > 1 ? `<select id="hlG" class="sm"><option value="">全部 ${esc(c.groupCol)}</option>${r.groups.map((g) => `<option ${S.hlf.group === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>` : ''}` : ''}</div>
           ${fs.length ? `<div class="hl-list ${stack ? 'wide' : ''}">${hlShown.map(({ f, i }) => `<div class="hl-row ${i === S.hl[mode] ? 'on' : ''}" data-hl="${i}"><span class="pill ${lvOf(f)}">${esc(fTxt(f))}</span><b>${esc(short(f.cell.item.name))}</b>${r.groups.length > 1 ? `<span class="g">@ ${esc(f.cell.group)}</span>` : ''}${c.cips.length > 1 ? `<span class="g">${esc(f.cell.cip)}</span>` : ''}${S.kbOn ? `<span class="m">${esc(meaning(f.dx))}</span>` : ''}</div>`).join('') || '<div class="muted small" style="padding:8px">沒有符合篩選的項目</div>'}</div>
             <div class="hl-det" id="hlDet"></div>`
-          : `<div class="ok-box">✔ 全部在綠燈範圍內：${MOD[mode]} 的 CIP 與 BSL match。${na.length ? `另有 ${na.length} 格無法判定（見下方資料品質）。` : ''}</div>`}
+          : `<div class="ok-box">✔ 全部在綠燈範圍內：${MOD[mode]} 的 CIP 與 BSL match。${na.length ? `另有 ${na.length} 格無法判定。` : ''}</div>`}
         </section>
       </div>
-      ${na.length || fs.some((f) => f.cell.low) ? `<div class="dq"><b>資料品質：</b>${E.dataQualityLines(r, S.cfg, mode).map(esc).join('；')}${fs.some((f) => f.cell.low) ? '；部分 HL 的 CIP 少於 5 片' : ''}</div>` : ''}
 `;
     bindCtrl(el);
     const gk = el.querySelector('[data-gokb]'); if (gk) gk.onclick = (e) => { e.preventDefault(); showTab('kb'); };
@@ -3490,7 +3484,7 @@ ${linkChip()}</div>`;
       return (w ? `片內 site σ 平均：${esc(c.cip)} <b>${f4(c.wiwC)}</b> vs BSL <b>${f4(c.wiwB)}</b> ${u}` : `wafer 間 σ：${esc(c.cip)} <b>${f4(c.sd)}</b> vs BSL <b>${f4(c.bsd)}</b> ${u}`) + `　均值 ${shiftTxt(c)}（${LVZH[c.level]}燈）· N ${c.n} / ${c.bn}`;
     }
     if (c.metric === 'fold') return `${esc(c.cip)} median <b>${f4(c.median)}</b> vs BSL <b>${f4(c.bmedian)}</b> ${u}（${c.fold >= 1 ? `高 ${c.fold.toFixed(1)} 倍` : `低 ${(1 / c.fold).toFixed(1)} 倍`}）· N ${c.n} / ${c.bn}`;
-    if (c.metric === 'rate') return `偏離固定值 ${f4(c.item.target)} ${u} 的比例：${esc(c.cip)} <b>${pct(c.rateC)}</b> vs BSL <b>${pct(c.rateB)}</b>（${c.diff >= 0 ? '+' : '−'}${Math.abs(c.diff).toFixed(1)}%pt）· N ${c.n} / ${c.bn}`;
+    if (c.metric === 'rate') return `固定值 ${f4(c.item.target)} ${u}：${esc(c.cip)} <b>${c.failC ? `${c.failC} 片偏離` : '全部相符'}</b> vs BSL <b>${c.failB ? `${c.failB} 片偏離` : '全部相符'}</b> · N ${c.n} / ${c.bn}`;
     const p = c.bmean ? ((c.mean - c.bmean) / Math.abs(c.bmean)) * 100 : null;
     const vx = f.varOf ? `　${f.varOf.which === 'wiw' ? `片內 σ <b>${f4(c.wiwC)}</b> vs BSL <b>${f4(c.wiwB)}</b>` : `wafer 間 σ <b>${f4(c.sd)}</b> vs BSL <b>${f4(c.bsd)}</b>`}` : '';
     return `${esc(c.cip)} mean <b>${f4(c.mean)}</b> vs BSL <b>${f4(c.bmean)}</b> ${u}${p != null ? `（${Math.abs(p) >= 1000 ? `×${(1 + p / 100).toPrecision(3)}` : `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`}）` : ''} · N ${c.n} / ${c.bn}${c.low ? ' · ⚠ CIP 少於 5 片' : ''}${vx}`;
@@ -4127,7 +4121,7 @@ body{background:#f4f6f9}.report{background:#fff;border:1px solid #e3e7ee;border-
 <div class="r-sec">總覽點燈表${c.groupCol ? `（依 ${esc(c.groupCol)} 分組）` : ''}</div>
 <div class="xov">${lightTable(mode, 'mean', ncolX > 8 ? 'compact' : 'normal')}${mode === 'inline' ? lightTable('inline', 'var', ncolX > 8 ? 'compact' : 'normal') : ''}</div>
 <div class="r-sec">異常 HL（${fs.length}）</div>${cards.join('') || '<div class="ok-box">✔ 全部在綠燈範圍內</div>'}
-${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQualityLines(r, S.cfg, mode).map(esc).join('；')}</div>` : ''}
+
 
 </div></body></html>`;
   }
@@ -4161,48 +4155,75 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       App.toast(`已匯出 PPT（${pptx.slides.length} 頁，${((performance.now() - t0) / 1000).toFixed(1)} s）`, 'ok');
     } catch (e) { console.error(e); App.toast(`PPT 匯出失敗：${e.message}`, 'err'); } finally { busy(''); }
   }
-  /** PPT lights table(s) for a module: native editable tables; N moves into the header when uniform per column; returns {tables, addLights, tableH, paginate} */
+  /** PPT lights table(s) for a module: native editable tables; N moves into the header when uniform per column.
+   *  v3.10 fit: PowerPoint never renders a row shorter than its text (lines × 1.2 × font + margins), so the planner tries font 11 → 10 → 9 → 8.5 pt and margin 4 → 2 pt
+   *  with per-row heights (category rows 9 pt) until the whole table fits the page; only then does it paginate. Returns {tables, addLights, tableH, paginate, fit}. */
   function lightTables(m, K) {
     const { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx } = K, MUTED = '595959';
     const its = r.items.filter((i) => i.kind === m);
     const views = m === 'inline' ? [['mean', '點燈表（均值 K-shift）'], ['var', '變異比較（W2W／WIW σ 倍數）']] : [['mean', '點燈表']];
     const nc = r.groups.length * c.cips.length, colW0 = 2.1, colW = Math.min(1.6, (SW - 1.2 - colW0) / Math.max(1, nc));
-    const many = nc > 8, fsL = many ? 9.5 : 11, rowH = many ? 0.29 : 0.34;
-    const hcell = (text, align = 'center') => ({ text, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align, fontSize: many ? 9 : 10.5 } });
-    // wafer counts: when every item in a column has the same N (the usual case) the count moves into the header and the cells stay one line — a 10–14 item module then fits one page
+    const many = nc > 8;
     const colN = r.groups.flatMap((g) => c.cips.map((p) => { const ns = new Set(its.map((it) => r.cells[it.name][g][p]).filter((x) => x.level !== 'na').map((x) => x.n)); return ns.size === 1 ? [...ns][0] : null; }));
     const nInHead = colN.length > 0 && colN.every((n) => n != null);
-    const headL = [hcell(`${MOD[m]} item${c.groupCol ? `\n${c.groupCol} →` : ''}`, 'left'),
-      ...r.groups.flatMap((g) => c.cips.map((p) => hcell(c.groupCol ? (c.cips.length > 1 ? `${g}\n${p}` : g) : `${p}\nvs ${c.baseline}`))).map((h, i) => (nInHead ? { ...h, text: `${h.text}\n${colN[i]}pcs` } : h))];
-    const tables = views.map(([view, vt]) => {
+    const hcell = (text, hfs, align = 'center') => ({ text, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align, fontSize: hfs } });
+    const headRow = (hfs) => [hcell(`${MOD[m]} item${c.groupCol ? `\n${c.groupCol} →` : ''}`, hfs, 'left'),
+      ...r.groups.flatMap((g) => c.cips.map((p) => hcell(c.groupCol ? (c.cips.length > 1 ? `${g}\n${p}` : g) : `${p}\nvs ${c.baseline}`, hfs))).map((h, i) => (nInHead ? { ...h, text: `${h.text}\n${colN[i]}pcs` } : h))];
+    const headLines = 1 + (c.groupCol ? 1 : 1) + (nInHead ? 1 : 0);
+    const lineH = (fs, lines, margin) => (lines * fs * 1.2 + 2 * margin) / 72 + 0.02;
+    const buildRows = (view, fs) => {
       const rows = [], byCatP = new Map();
       [...its].sort((a, b) => (/^other/.test(a.cat) ? 1 : 0) - (/^other/.test(b.cat) ? 1 : 0)).forEach((it) => { if (!byCatP.has(it.cat)) byCatP.set(it.cat, []); byCatP.get(it.cat).push(it); });
       for (const [cat, catIts] of byCatP) {
-        rows.push([{ text: RU.byId(cat).label, options: { colspan: nc + 1, fill: { color: 'F2F2F2' }, color: MUTED, bold: true, fontSize: 9 } }]);
-        for (const it of catIts) rows.push([{ text: short(it.name), options: { bold: true, align: 'left' } }, ...r.groups.flatMap((g) => c.cips.map((p) => {
-          const x = r.cells[it.name][g][p], fs = fsL;
+        rows.push([{ text: RU.byId(cat).label, options: { colspan: nc + 1, fill: { color: 'F2F2F2' }, color: MUTED, bold: true, fontSize: Math.min(9, fs) } }]);
+        for (const it of catIts) rows.push([{ text: short(it.name), options: { bold: true, align: 'left', fontSize: fs } }, ...r.groups.flatMap((g) => c.cips.map((p) => {
+          const x = r.cells[it.name][g][p];
           const lvl = view === 'var' ? x.varLevel : x.level;
           const fill = { color: lvl === 'orange' ? 'FBE3DA' : lvl === 'yellow' ? 'FBF1D8' : 'FFFFFF' };
           if (view === 'var') { const t = [x.sdRatio != null ? `W2W ×${x.sdRatio.toFixed(1)}` : '', x.wiwRatio != null ? `WIW ×${x.wiwRatio.toFixed(1)}` : ''].filter(Boolean).join('\n') || '—'; return { text: t, options: { color: LVC[lvl] || GREY, bold: true, align: 'center', fontFace: 'Arial', fontSize: fs, fill } }; }
-          return { text: x.level === 'na' ? [{ text: '—', options: { color: GREY, fontSize: fs } }] : nInHead ? [{ text: shiftTxt(x), options: { color: LVC[lvl], bold: true, fontSize: fs } }] : [{ text: shiftTxt(x), options: { color: LVC[lvl], bold: true, fontSize: fs, breakLine: true } }, { text: `${x.n}pcs`, options: { color: '7F7F7F', fontSize: Math.max(7.5, fs - 2.5) } }], options: { align: 'center', fontFace: 'Arial', fill, valign: 'middle' } };
+          const main = { text: shiftTxt(x), options: { color: x.level === 'na' ? GREY : LVC[lvl], bold: x.level !== 'na', fontSize: x.level === 'na' && x.metric === 'rate' && x.failC ? Math.max(7.5, fs - 2) : fs } };
+          return { text: x.level === 'na' && !(x.metric === 'rate' && x.failC) ? [{ text: '—', options: { color: GREY, fontSize: fs } }] : nInHead ? [main] : [{ ...main, options: { ...main.options, breakLine: true } }, { text: `${x.n}pcs`, options: { color: '7F7F7F', fontSize: Math.max(7.5, fs - 2.5) } }], options: { align: 'center', fontFace: 'Arial', fill, valign: 'middle' } };
         }))]);
       }
-      const two = many ? 0.4 : 0.46;   // two-line cells (W2W／WIW, or shift + pcs) need this much whatever rowH says
-      const twoLine = view === 'var' ? r.hasWiw : !nInHead;   // W2W only (by-wafer data) → one line
-      return { view, vt, rows, rh: twoLine ? two : rowH, min: twoLine ? two : 0.24 };
-    });
-    const tableH = (t, n) => (n + 1) * t.rh + 0.1;
-    const addLights = (s, t, y, rowsSlice) => s.addTable([headL, ...rowsSlice], { x: Math.max(0.6, (SW - colW0 - colW * nc) / 2), y, w: colW0 + colW * nc, colW: [colW0, ...Array(nc).fill(colW)], fontFace: FONT, fontSize: fsL, rowH: t.rh, valign: 'middle', margin: many ? 2 : 4, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
-    /** split a table into page slices that fit `avail` inches: first tighten row height (down to t.min), then paginate without orphaned category headers */
+      return rows;
+    };
+    const tables = views.map(([view, vt]) => ({ view, vt, twoLine: view === 'var' ? r.hasWiw : !nInHead, fs: many ? 9.5 : 11, margin: many ? 2 : 4, rows: null, rowH: null }));
+    const isHead = (row) => !!(row[0].options && row[0].options.colspan);
+    /** per-row heights for one font / margin setting (header row first) */
+    const heights = (t, rows, fs, margin) => [lineH(Math.max(8, fs - 0.5), headLines, margin), ...rows.map((row) => (isHead(row) ? lineH(Math.min(9, fs), 1, margin) : lineH(fs, t.twoLine ? 2 : 1, margin)))];
+    const sum = (a) => a.reduce((x, y) => x + y, 0);
+    /** choose the largest font whose full table fits `avail`; falls back to the smallest (caller paginates) */
+    const fit = (t, avail) => {
+      const steps = many ? [[9.5, 2], [9, 2], [8.5, 2]] : [[11, 4], [11, 2], [10, 2], [9, 2], [8.5, 2]];
+      let pick = null;
+      for (const [fs, margin] of steps) { const rows = buildRows(t.view, fs), hs = heights(t, rows, fs, margin); if (sum(hs) + 0.05 <= avail) { pick = { fs, margin, rows, hs }; break; } }
+      if (!pick) { const [fs, margin] = steps[steps.length - 1]; const rows = buildRows(t.view, fs); pick = { fs, margin, rows, hs: heights(t, rows, fs, margin) }; }
+      t.fs = pick.fs; t.margin = pick.margin; t.rows = pick.rows; t.rowH = pick.hs; t.fits = sum(pick.hs) + 0.05 <= avail;
+      return t;
+    };
+    const tableH = (t, slice) => sum(t.rowH ? t.rowH.slice(0, (slice ? slice.length : t.rows.length) + 1) : []) + 0.05;
+    const addLights = (s, t, y, rowsSlice) => {
+      const idx = rowsSlice.map((row) => t.rows.indexOf(row));
+      const rh = [t.rowH[0], ...idx.map((i) => t.rowH[i + 1])];
+      s.addTable([headRow(Math.max(8, t.fs - 0.5)), ...rowsSlice], { x: Math.max(0.6, (SW - colW0 - colW * nc) / 2), y, w: colW0 + colW * nc, colW: [colW0, ...Array(nc).fill(colW)], fontFace: FONT, fontSize: t.fs, rowH: rh, valign: 'middle', margin: t.margin, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: false });
+    };
+    /** page slices that fit `avail`: fit() first (font / margin), then cut by real row heights, never leaving a category header at the bottom */
     const paginate = (t, avail) => {
-      if ((t.rows.length + 1) * t.rh + 0.1 > avail) t.rh = Math.max(t.min, Math.min(t.rh, (avail - 0.1) / (t.rows.length + 1)));
-      const per = Math.max(4, Math.floor((avail - 0.1) / t.rh) - 1);
-      const isHead = (row) => !!(row[0].options && row[0].options.colspan);
-      const chunks = []; for (let i = 0; i < t.rows.length;) { let end = Math.min(t.rows.length, i + per); if (end < t.rows.length && isHead(t.rows[end - 1])) end--;
-        const sl = t.rows.slice(i, end); if (i > 0 && !isHead(sl[0])) { let j = i - 1; while (j > 0 && !isHead(t.rows[j])) j--; if (isHead(t.rows[j])) sl.unshift(t.rows[j]); } chunks.push(sl); i = end; }
+      fit(t, avail);
+      if (t.fits) return [t.rows];
+      const chunks = []; let i = 0;
+      while (i < t.rows.length) {
+        let h = t.rowH[0] + 0.05, end = i;
+        while (end < t.rows.length && h + t.rowH[end + 1] <= avail) { h += t.rowH[end + 1]; end++; }
+        if (end === i) end = i + 1;
+        if (end < t.rows.length && isHead(t.rows[end - 1])) end--;
+        const sl = t.rows.slice(i, end);
+        if (i > 0 && !isHead(sl[0])) { let j = i - 1; while (j > 0 && !isHead(t.rows[j])) j--; if (isHead(t.rows[j])) sl.unshift(t.rows[j]); }
+        chunks.push(sl); i = end;
+      }
       return chunks;
     };
-    return { tables, addLights, tableH, paginate };
+    return { tables, addLights, tableH, paginate, fit };
   }
   /** v3.8 layer order for stacks: (Mx, Vx−1) belong to the same metal layer → M1, M2, V1, M3, V2 …; TM／TV after the Mx stack; items without a layer last; stable within a layer */
   const layerKey = (name) => { const m = (RU.layer(name) || '').match(/^(TM|TV|M|V)(\d+)$/i); if (!m) return 1e6; const pre = m[1].toUpperCase(), n = +m[2]; return (pre.startsWith('T') ? 1000 : 0) + (pre.endsWith('V') ? (n + 1) * 10 + 1 : n * 10); };
@@ -4287,10 +4308,11 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       if (!pages.length) return;
       // title 0.2–0.75 → comment box 0.82–1.32 → legend / group line 1.42–1.68 → rows
       const top = 1.42, bottom = SH - 0.45, gap = 0.3, nameW = 1.3, rightW = c.cips.length > 2 ? 1.15 : 0.9, pad = 0.06, head = 0.3;
-      const colW = (SW - 1.2 - gap) / 2, chartW0 = colW - nameW - rightW - pad * 2;
       const rowH = Math.min(1.5, (bottom - top - head - 0.3) / rows);
-      const chartW = opts.aspect ? Math.min(chartW0, (rowH - 0.06) * opts.aspect) : chartW0;   // quantile rows: narrower (≈ 2:1) so tails stand out
       for (let pg = 0; pg < pages.length; pg++) {
+        // a page with a single column (≤ 7 items, no groups) spans the full width → wide trend rows like the reference deck
+        const nCol = pages[pg].length, colW = (SW - 1.2 - gap * (nCol - 1)) / nCol, chartW0 = colW - nameW - rightW - pad * 2;
+        const chartW = opts.aspect ? Math.min(chartW0, (rowH - 0.06) * opts.aspect) : chartW0;   // quantile rows: narrower (≈ 2:1) so tails stand out
         const s = frame(`${title}${pages.length > 1 ? `（${pg + 1}/${pages.length}）` : ''}`, { comment: true });
         for (let ci = 0; ci < pages[pg].length; ci++) {
           const col = pages[pg][ci], x0 = 0.6 + ci * (colW + gap);
@@ -4331,27 +4353,28 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     const xT = () => { const by = orderBy(); return `wafer 順序（依 ${short(by)}）`; };
     for (const m of mods) {
       const its = sortLayer(r.items.filter((i) => i.kind === m));
-      const { tables, addLights, tableH, paginate } = lightTables(m, { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx });
+      const { tables, addLights, tableH, paginate, fit } = lightTables(m, { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx });
       const Lhl = hlLines(m).slice(0, 4), sumY = 1.1 + 0.33 * Math.max(1, Lhl.length) + 0.2;
       const addSummary = (s) => bullets(s, Lhl.length ? Lhl.map((l) => [{ t: `${l.k}　` }, { t: l.a.join('、'), c: BLUE }]) : [[{ t: 'CIP 與 BSL match', c: BLUE }]], 1.0, 1.4);
-      const totalH = tables.reduce((a, t) => a + tableH(t, t.rows.length) + 0.45, 0);
+      tables.forEach((t) => fit(t, SH - 0.5 - sumY - 0.1));
+      const totalH = tables.reduce((a, t) => a + tableH(t) + 0.45, 0);
       if (sumY + totalH <= SH - 0.5) {
         const s = frame(`${MOD[m]} 點燈表`); addSummary(s); let y = sumY;
-        tables.forEach((t, i) => { if (tables.length > 1) { section(s, t.vt, 0.6, y, 6); y += 0.4; } addLights(s, t, y, t.rows); y += tableH(t, t.rows.length) + 0.25; });
+        tables.forEach((t, i) => { if (tables.length > 1) { section(s, t.vt, 0.6, y, 6); y += 0.4; } addLights(s, t, y, t.rows); y += tableH(t) + 0.25; });
       } else for (const t of tables) { const chunks = paginate(t, SH - 0.5 - sumY - 0.1); chunks.forEach((sl, pg) => { const s = frame(`${MOD[m]} ${t.vt}${chunks.length > 1 ? `（${pg + 1}/${chunks.length}）` : ''}`); addSummary(s); addLights(s, t, sumY, sl); }); }
       await stack(its, `${MOD[m]} Summary 排排站 ｜ ${c.cips.join('、')} vs ${c.baseline}`, ({ it, g }) => {
         const fig = trendFig(it.name, g, 300, { mini: true });
         const cells = r.cells[it.name][g], c0 = cells[c.cips[0]];
-        const mv = (x, b) => (it.metric === 'fold' ? f4(b ? x.bmedian : x.median) : it.metric === 'rate' ? pct(b ? x.rateB : x.rateC) : f4(b ? x.bmean : x.mean));
+        const mv = (x, b) => (it.metric === 'fold' ? f4(b ? x.bmedian : x.median) : f4(b ? x.bmean : x.mean));   // fixed-value items: the mean, no %
         const annos = [{ t: c0 ? mv(c0, true) : '—', n: c0 ? c0.bn : null, c: condColor(c.baseline) }, ...c.cips.map((p) => ({ t: cells[p].level === 'na' ? '—' : mv(cells[p]), n: cells[p].level === 'na' ? null : cells[p].n, c: condColor(p) }))];
-        const right = c.cips.map((p) => ({ p, t: shiftTxt(cells[p]), c: LVC[cells[p].level] }));
+        const right = c.cips.map((p) => ({ p, t: it.metric === 'rate' ? '' : shiftTxt(cells[p]), c: LVC[cells[p].level] }));
         return { fig, annos, right };
       }, () => xT());
       await stack(its, `${MOD[m]} Quantile 排排站 ｜ Normal Quantile vs 量測值`, ({ it, g }) => {
         const Q = qStats(it.name, g), fig = qFig(it.name, g, 300, { mini: true, stats: Q });
         const cells = r.cells[it.name][g], sB = Q.series[c.baseline];
         const annos = [{ t: sB ? `P50 ${f4(sB.p50)}` : '—', n: sB ? sB.n : null, c: condColor(c.baseline) }, ...c.cips.map((p) => { const sq = Q.series[p]; return { t: sq ? `P50 ${f4(sq.p50)}` : '—', n: sq ? sq.n : null, c: condColor(p) }; })];
-        const right = c.cips.map((p) => { const x = cells[p]; const sd = x.sdRatio != null && x.level !== 'na' ? ` σ×${x.sdRatio.toFixed(1)}` : ''; return { p, t: `${shiftTxt(x)}${sd}`, c: LVC[x.level] }; });
+        const right = c.cips.map((p) => { const x = cells[p]; return { p, t: it.metric === 'rate' ? '' : shiftTxt(x), c: LVC[x.level] }; });
         return { fig, annos, right };
       }, (it) => `${short(it.name)}${unit(it.name) ? ` (${unit(it.name)})` : ''}${it.metric === 'fold' ? '，log' : ''}`, { xAlways: true, keepY: true, maxRows: 5, aspect: 2.0 });
     }
@@ -4417,7 +4440,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       const u = await figPng(fig, w, h); tick(); return strip(u);
     };
     const okRows = (f) => checkRows(f).filter((q) => q.st === 'ok').map((q) => `${q.text}${q.note ? ` ${q.note}` : ''}`);
-    const numLine = (f) => { const x = f.cell; return x.metric === 'rate' ? `異常率 ${pct(x.rateC)} vs BSL ${pct(x.rateB)}（固定值 ${f4(x.item.target)}）` : x.metric === 'fold' ? `median ${f4(x.median)} vs BSL ${f4(x.bmedian)}` : `mean ${f4(x.mean)} vs BSL ${f4(x.bmean)}`; };
+    const numLine = (f) => { const x = f.cell; return x.metric === 'rate' ? `固定值 ${f4(x.item.target)}：${x.failC ? `${x.failC} 片偏離` : '全部相符'}` : x.metric === 'fold' ? `median ${f4(x.median)} vs BSL ${f4(x.bmedian)}` : `mean ${f4(x.mean)} vs BSL ${f4(x.bmean)}`; };
     const hlTitle = (f) => `${short(f.cell.item.name)}${r.groups.length > 1 ? ` @ ${f.cell.group}` : ''}：${f.cell.cip} ${fTxt(f)}`;
     const cipN = (p) => r.nWafer[p] || 0;
     /** "P1 CIP1：Rs_M2 +1.7σ、Rc_V2 +2.6σ" — one line per group × CIP, abnormal items only, in HL order */
@@ -4441,7 +4464,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
     for (const m of mods) {
       const its = r.items.filter((i) => i.kind === m);
       // ================================================================ light table(s): native, editable
-      const { tables, addLights, tableH, paginate } = lightTables(m, { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx });
+      const { tables, addLights, tableH, paginate, fit } = lightTables(m, { r, c, SW, SH, BLUE, LVC, GREY, LINE, FONT, pptx });
       // ---- HL 總表 rows (built here so a short module can share the lights page)
       const fsAll = r.findings[m];
       const hc = (t) => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: BLUE }, align: 'left', fontSize: 10.5 } });
@@ -4459,12 +4482,13 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
       const Lhl = hlLines(m).slice(0, 4);
       const sumY = 1.1 + 0.33 * Math.max(1, Lhl.length) + 0.2;
       const addSummary = (s) => bullets(s, Lhl.length ? Lhl.map((l) => [{ t: `${l.k}　` }, { t: l.a.join('、'), c: BLUE }]) : [[{ t: 'CIP 與 BSL match', c: BLUE }]], 1.0, 1.4);
-      const totalLightH = tables.reduce((a, t) => a + tableH(t, t.rows.length) + 0.45, 0), hlH = fsAll.length ? (fsAll.length + 1) * hlRowH + 0.5 : 0;
+      tables.forEach((t) => fit(t, SH - 0.5 - sumY - 0.1));
+      const totalLightH = tables.reduce((a, t) => a + tableH(t) + 0.45, 0), hlH = fsAll.length ? (fsAll.length + 1) * hlRowH + 0.5 : 0;
       if (sumY + totalLightH + hlH <= SH - 0.5) {
         // short module → one page: all light tables + HL table
         const s = frame(`${MOD[m]} 點燈表${fsAll.length ? '與 HL 總表' : ''}`); addSummary(s);
         let y = sumY;
-        tables.forEach((t, i) => { if (i > 0 || tables.length > 1) { section(s, t.vt, 0.6, y, 6); y += 0.4; } addLights(s, t, y, t.rows); y += tableH(t, t.rows.length) + 0.25; });
+        tables.forEach((t, i) => { if (i > 0 || tables.length > 1) { section(s, t.vt, 0.6, y, 6); y += 0.4; } addLights(s, t, y, t.rows); y += tableH(t) + 0.25; });
         if (fsAll.length) { section(s, `HL 總表　✔ 有對上　○ 缺資料　△ 關聯弱　✘ 未對上`, 0.6, y, SW - 1.2); addHL(s, y + 0.4, rowsS); }
       } else {
         for (const t of tables) {
@@ -4584,8 +4608,7 @@ ${r.naList[mode].length ? `<div class="dq"><b>資料品質：</b>${E.dataQuality
         section(s, `${MOD[m]} 下一步（全部 HL 共同）`, 0.6, y, SW - 1.2);
         tb(s, common.slice(0, 5).join('　'), { x: 0.6, y: y + 0.38, w: SW - 1.2, h: 0.5, fontSize: 12, color: INK, fit: 'shrink' }); y += 1.0;
       }
-      const dq = mods.flatMap((m) => E.dataQualityLines(r, c, m));
-      if (dq.length) { section(s, '資料品質', 0.6, y, SW - 1.2); tb(s, [...new Set(dq)].join('；'), { x: 0.6, y: y + 0.38, w: SW - 1.2, h: 0.6, fontSize: 11, color: MUTED, fit: 'shrink' }); }
+
     }
     return pptx;
   }

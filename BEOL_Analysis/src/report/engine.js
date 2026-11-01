@@ -199,12 +199,12 @@
           } else if (it.metric === 'rate') {
             const tol = Math.max(1e-6, Math.abs(it.target) * 0.005);
             const fail = (a) => a.filter((x) => Math.abs(x - it.target) > tol).length;
+            // v3.10 fixed-value items (SPA …): the CIP is green when every wafer sits on the value; any wafer off it → grey, the engineer judges (no % threshold, never an HL)
             if (s.n && b.n) {
-              cell.rateC = fail(vc[c]) / s.n; cell.rateB = fail(vb) / b.n; cell.reason = '';
-              cell.diff = (cell.rateC - cell.rateB) * 100;
-              cell.dir = Math.sign(cell.diff);
-              cell.level = cell.diff <= th.rG ? 'green' : cell.diff <= th.rO ? 'yellow' : 'orange';
-              cell.text = `異常 ${pct(cell.rateC)}`;
+              cell.failC = fail(vc[c]); cell.failB = fail(vb); cell.rateC = cell.failC / s.n; cell.rateB = cell.failB / b.n;
+              cell.diff = (cell.rateC - cell.rateB) * 100; cell.dir = 0;
+              if (cell.failC === 0) { cell.level = 'green'; cell.reason = ''; cell.text = `= ${it.target}`; }
+              else { cell.level = 'na'; cell.reason = `${cell.failC} 片 ≠ ${it.target}`; cell.text = `${cell.failC} 片 ≠ ${it.target}`; }
             } else { cell.level = 'na'; cell.reason = reason || 'BSL 無資料'; }
           } else {
             cell.dir = Math.sign(k || 0);
@@ -604,10 +604,6 @@
     const cnt = res.cnt[mode], fs = res.findings[mode];
     L.push(`【BEOL ${E.MOD[mode] || mode} 戰報】${cfg.cips.join('、')}（CIP） vs ${cfg.baseline}（BSL）${meta?.file ? `　資料：${meta.file}` : ''}`);
     if (res.dateRange) L.push(`期間：${App.fmtDate(res.dateRange[0]).slice(0, 10)} ～ ${App.fmtDate(res.dateRange[1]).slice(0, 10)}　wafer 數：${Object.entries(res.nWafer).map(([c, n]) => `${c} ${n}`).join('、')}`);
-    L.push(mode === 'wat'
-      ? `燈號：一般 item 綠 ≤ ${th.kG}σ、橘 > ${th.kO}σ；LK 綠 ≤ ×${th.fG}、橘 > ×${th.fO}；SPA 異常率比 BSL 多 綠 ≤ ${th.rG}%、橘 > ${th.rO}%`
-      : mode === 'inline' ? `燈號：均值 綠 ≤ ${th.kG}σ、橘 > ${th.kO}σ；變異 σ 倍數 綠 ≤ ×${th.sG}、橘 > ×${th.sO}`
-      : `燈號：K 綠 ≤ ${th.kG}σ、橘 > ${th.kO}σ（yield 以 wafer 為單位）`);
     L.push(`結果：綠 ${cnt.green}、黃 ${cnt.yellow}、橘 ${cnt.orange}${cnt.na ? `、無法判定 ${cnt.na}` : ''}${mode === 'inline' ? `；變異異常 ${res.varCnt.orange + res.varCnt.yellow}` : ''}`);
     if (!fs.length) L.push('結論：全部在綠燈範圍內，CIP 與 BSL match。');
     // v3.2: a check sentence that every HL repeats is printed once at the end; an explanatory sentence (what 片內 σ means) once only
@@ -618,7 +614,7 @@
       const c = f.cell;
       L.push(`${i + 1}. ${f.dx.title}`);
       if (f.type === 'mean') {
-        if (c.metric === 'rate') L.push(`   異常率 ${E.pct(c.rateC)} vs BSL ${E.pct(c.rateB)}（固定值 ${c.item.target}，N ${c.n} / ${c.bn}）`);
+        if (c.metric === 'rate') L.push(`   固定值 ${c.item.target}：${c.failC ? `${c.failC} 片偏離` : '全部相符'} vs BSL ${c.failB ? `${c.failB} 片偏離` : '全部相符'}（N ${c.n} / ${c.bn}）`);
         else if (c.metric === 'fold') L.push(`   median ${f4(c.median)} vs BSL ${f4(c.bmedian)}（N ${c.n} / ${c.bn}）`);
         else L.push(`   ${c.cip} mean ${f4(c.mean)} vs BSL ${f4(c.bmean)}（N ${c.n} / ${c.bn}）`);
       }
@@ -632,8 +628,7 @@
     });
     if (common.length) L.push(`建議檢查（全部 HL 共同）：${common.join('；')}`);
     if (meta?.kbOn) L.push(RU().kbVersion());
-    const dq = E.dataQualityLines(res, cfg, mode);
-    if (dq.length) L.push(`資料品質：${dq.join('；')}`);
+
     return L.join('\n');
   };
 })();

@@ -148,7 +148,7 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     ok(p1.pend.units === 0 && Math.abs(p1.rs) < 3 && Math.abs(p1.yl) < 3 && !p1.hl.some((t) => /Rs_M3/.test(t)), `one-click scale: Rs K ${p1.rs.toFixed(2)}σ, Yield K ${p1.yl.toFixed(2)}σ, Rs no longer an HL`);
     ok(/機台／chamber/.test(p1.sm) && !/沒有 BSL 可對照|無法分辨|皆偏/.test(p1.sm), 'tool row (v3.8): CIP-only chambers → route only, no comment, never 皆偏');
     ok(!/鄰層 M3 THK/.test(p1.sm) && !/✔ .*M3 THK/.test(p1.sm), 'KB off → no 鄰層 row (knowledge-base feature), grey partner never ✔');
-    ok(/建議檢查（全部 HL 共同）/.test(p1.sm) && /資料品質：CIP-C 在 P2 沒有 wafer/.test(p1.sm) && !/知識庫 base/.test(p1.sm), 'summary: common checks printed once, data quality merged, no KB version line when KB is off');
+    ok(/建議檢查（全部 HL 共同）/.test(p1.sm) && !/資料品質/.test(p1.sm) && !/知識庫 base/.test(p1.sm), 'summary: common checks printed once, no data-quality line (v3.11), no KB version line when KB is off');
     await page.evaluate(() => document.querySelector('#kbOn').click());
     await page.evaluate(() => document.querySelector('[data-pexcl]').click()); await page.waitForTimeout(900);
     const p2 = await page.evaluate(() => ({ pend: App.rptUI.prepPending() }));
@@ -177,6 +177,10 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     await page.waitForTimeout(800);
     const v1 = await page.evaluate(() => ({ order: App.rpt.vis.order, top: document.querySelector('#hlDet .fig .plot.js-plotly-plot').data.filter((d) => d.meta && d.meta.cond).map((d) => d.meta.cond).pop(), stored: JSON.parse(localStorage.getItem('pdat:rpt-vis')).order }));
     ok(v1.order[0] === 'CIP3' && v1.top === 'CIP3' && v1.stored[0] === 'CIP3', 'drag CIP3 to the front → it is drawn on top of every live chart, order persisted');
+    await page.click('#tabs button[data-tab=corr]'); await page.waitForTimeout(1500);
+    const vc = await page.evaluate(() => { const gd = document.querySelector('#cPlot'); const conds = gd.data.filter((d) => d.meta && d.meta.cond && d.meta.role === 'pts'); return { top: conds[conds.length - 1].meta.cond, bottom: conds[0].meta.cond, types: [...new Set(gd.data.map((d) => d.type))] }; });
+    ok(vc.top === 'CIP3' && vc.bottom === 'POR' && vc.types.join() === 'scatter', `correlation scatter follows the Condition-bar layer order (top ${vc.top}, bottom ${vc.bottom}; all SVG traces, no scattergl)`);
+    await page.click('#tabs button[data-tab=report]'); await page.waitForTimeout(400);
     await page.evaluate(() => document.querySelector('.cchip[data-cond=CIP2] .dot').click()); await page.waitForTimeout(300);
     ok(await page.evaluate(() => !!document.querySelector('.cpop') && document.querySelectorAll('.cpop .sw').length >= 8 && !!document.querySelector('.cpop .cp-hex') && !!document.querySelector('.cpop input[type=color]')), 'colour popover: swatches + hex field + native picker');
     await page.evaluate(() => { const i = document.querySelector('.cpop .cp-hex'); i.value = '#009900'; i.dispatchEvent(new Event('change')); }); await page.waitForTimeout(600);
@@ -237,7 +241,9 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
   await run(path.join(SD, 'variants', 'N_pp30k.xlsx'), async (page, st) => {
     ok(st.loadMs < 30000, `31k rows load → report in ${(st.loadMs / 1000).toFixed(1)} s (worker parse + staged progress bar)`);
     const spa = await page.evaluate(() => { const it = App.rpt.cfg.items.find((i) => /^SPA/i.test(i.name)); const cell = App.rpt.res.cells['SPA_M2']; return { metric: it && it.metric, target: it && it.target, pc: cell && cell.PC['B廠'].level, pb: cell && cell.PB['B廠'].level, inLights: !!document.querySelector('#report .lt') && document.querySelector('#report').innerText.includes('SPA_M2') }; });
-    ok(spa.metric === 'rate' && spa.target === 7 && spa.pc === 'yellow' && spa.pb === 'green' && spa.inLights, `SPA fixed-value item (target ${spa.target}) is in the lights table: PC ${spa.pc}, PB ${spa.pb}`);
+    ok(spa.metric === 'rate' && spa.target === 7 && spa.pc === 'na' && spa.pb === 'na' && spa.inLights, `SPA fixed-value item (target ${spa.target}) is in the lights table; stray wafers → grey for the engineer (PC ${spa.pc}, PB ${spa.pb})`);
+    const spaTxt = await page.evaluate(() => { const r = App.rpt.res; return { pc: r.cells['SPA_M2'].PC['B廠'].text, hl: r.findings.wat.some((f) => /SPA/.test(f.cell.item.name)) }; });
+    ok(/片 ≠ 7/.test(spaTxt.pc) && !spaTxt.hl, `fixed-value cell reads "${spaTxt.pc}", never an HL`);
     const a = Date.now(); await page.click('#tabs button[data-tab=trend]'); await page.evaluate(() => document.querySelector('[data-mode=all]').click());
     let first = null, n0 = 0; for (let k = 0; k < 300; k++) { await page.waitForTimeout(100); const n = await page.evaluate(() => document.querySelectorAll('#trend .js-plotly-plot').length); if (n && first == null) first = Date.now() - a; if (n === n0 && n > 0 && k > 8) break; n0 = n; }
     ok(first != null && first < 3000 && n0 >= 16, `trend matrix on 31k rows: first chart in ${first} ms, ${n0} charts in ${Date.now() - a} ms (queued one per task)`);
