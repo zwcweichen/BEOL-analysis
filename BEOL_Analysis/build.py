@@ -16,6 +16,7 @@ PAT = re.compile(r"<!--INLINE:([^>]+?)-->")
 CDN = {
     "../vendor/xlsx.full.min.js": "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
     "../vendor/plotly.min.js": "https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.3/plotly.min.js",
+    "../vendor/plotly-cartesian.min.js": "https://cdn.jsdelivr.net/npm/plotly.js-cartesian-dist-min@2.35.3/plotly-cartesian.min.js",
     "../vendor/pptxgen.bundle.js": "https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js",
 }
 

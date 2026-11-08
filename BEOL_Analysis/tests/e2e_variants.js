@@ -41,7 +41,7 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     st.loadMs = loadMs;
     console.log(`\n=== ${path.basename(file)}: cond=${st.cond} BSL=${st.base} CIP=${st.cips} group=${st.group || '-'} (${loadMs} ms)`);
     await check(page, st);
-    if (st.hasRes) {
+    if (st.hasRes && !/P_items100/.test(file)) {   // 100-item deck takes minutes; the deck builder is covered by the other files
       const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 200000 }), page.click('#btnPpt')]);
       ok(/\.pptx$/.test(dl.suggestedFilename()) || dl.suggestedFilename() === 'download', `PPT export works (${dl.suggestedFilename()})`);   // headless Chromium reports 'download' when the name has non-ASCII condition names (A廠／B廠)
     }
@@ -247,6 +247,38 @@ print(json.dumps({'rc_tv2':K(h,'Split','POR','Thin_TaN','Rc_TV2'),'rs_px200':K(p
     const a = Date.now(); await page.click('#tabs button[data-tab=trend]'); await page.evaluate(() => document.querySelector('[data-mode=all]').click());
     let first = null, n0 = 0; for (let k = 0; k < 300; k++) { await page.waitForTimeout(100); const n = await page.evaluate(() => document.querySelectorAll('#trend .js-plotly-plot').length); if (n && first == null) first = Date.now() - a; if (n === n0 && n > 0 && k > 8) break; n0 = n; }
     ok(first != null && first < 3000 && n0 >= 16, `trend matrix on 31k rows: first chart in ${first} ms, ${n0} charts in ${Date.now() - a} ms (queued one per task)`);
+    await page.click('#tabs button[data-tab=report]');
+  });
+  // ---- v3.12 CSV import, wafer-order axis labelled by the ordering column, trend gallery columns, colour picker apply-on-release, JMP guard
+  await run(path.join(SD, 'variants', 'R_10k.csv'), async (page, st) => {
+    ok(st.hasRes && st.base === 'FAB18' && st.cips.join() === 'FAB15', `CSV import: 10k wafers, ${st.base} vs ${st.cips.join()} (${st.loadMs} ms)`);
+    const tk = await page.evaluate(() => { const gd = document.querySelector('#hlDet .fig .plot.js-plotly-plot'); return { mode: gd.layout.xaxis.tickmode, txt: gd.layout.xaxis.ticktext, vals: gd.layout.xaxis.tickvals, n: gd.data.find((d) => d.meta && d.meta.cond).x.length }; });
+    ok(tk.mode === 'array' && tk.txt.length >= 3 && tk.txt.length <= 10 && tk.txt.every((t) => /^\d\d\/\d\d$/.test(t)) && tk.vals[0] === 0 && tk.vals.every((v, i) => !i || v > tk.vals[i - 1]), `wafer-order x axis labelled with WAT_DATE (${tk.txt.join(', ')}), ${tk.n} points drawn`);
+    const big = await page.evaluate(() => { const o = App.rptUI.seqTicks(Array.from({ length: 100000 }, (_, i) => ({ WAT_DATE: new Date(2025, 0, 1 + Math.floor(i / 137)) })), 10); return { n: o.tickvals.length, first: o.ticktext[0], last: o.ticktext[o.ticktext.length - 1] }; });
+    ok(big.n >= 8 && big.n <= 10 && /^\d\d\/\d\d\/\d\d$/.test(big.first) && big.first !== big.last, `100k-wafer axis: ${big.n} ticks, two-year span shows the year (${big.first} … ${big.last})`);
+    // colour picker: dragging the native picker previews only; the charts recolour when the picker closes
+    await page.evaluate(() => document.querySelector('.cchip[data-cond=FAB15] .dot').click()); await page.waitForTimeout(300);
+    await page.evaluate(() => { const i = document.querySelector('.cpop .cp-pick'); i.value = '#aa0000'; i.dispatchEvent(new Event('input', { bubbles: true })); }); await page.waitForTimeout(200);
+    const c1 = await page.evaluate(() => ({ stored: App.rpt.vis.colors.FAB15 || null, hex: document.querySelector('.cpop .cp-hex').value, apply: !document.querySelector('.cpop [data-apply]').disabled }));
+    ok(c1.stored == null && c1.hex === '#aa0000' && c1.apply, 'dragging the picker previews the hex + chip only (no chart redraw), 套用 enabled');
+    await page.evaluate(() => { const i = document.querySelector('.cpop .cp-pick'); i.dispatchEvent(new Event('change', { bubbles: true })); }); await page.waitForTimeout(600);
+    ok(await page.evaluate(() => App.rpt.vis.colors.FAB15 === '#aa0000' && document.querySelector('#hlDet .fig .plot.js-plotly-plot').data.find((d) => d.meta && d.meta.cond === 'FAB15' && d.marker).marker.color === '#aa0000'), 'releasing the picker applies the colour once to the charts');
+    await page.evaluate(() => { document.querySelectorAll('.cpop').forEach((x) => x.remove()); delete App.rpt.vis.colors.FAB15; App.rptUI.applyVis(); });
+    // JMP binary table → guidance toast, nothing parsed
+    await page.setInputFiles('#file', { name: 'table.jmp', mimeType: 'application/octet-stream', buffer: Buffer.from([0xff, 0xff, 0x00, 0x01]) }); await page.waitForTimeout(500);
+    const jmp = await page.evaluate(() => ({ toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join(' | '), file: App.rpt.file }));
+    ok(/JMP/.test(jmp.toast) && /Save\(/.test(jmp.toast) && jmp.file === 'R_10k.csv', `.jmp → export guidance with a JSL one-liner, data untouched (${jmp.toast.slice(0, 60)}…)`);
+  });
+  await run(path.join(SD, 'variants', 'P_items100.csv'), async (page, st) => {
+    ok(st.hasRes && Object.keys(st.items).length === 100, `100 WAT items from CSV (${st.loadMs} ms)`);
+    await page.click('#tabs button[data-tab=trend]'); await page.waitForTimeout(300); await page.evaluate(() => document.querySelector('[data-mode=all]').click()); await page.waitForTimeout(400);
+    const g3 = await page.evaluate(() => ({ cells: document.querySelectorAll('#trend .mc').length, cols: getComputedStyle(document.querySelector('#trend .tmx')).gridTemplateColumns.split(' ').length, gal: !!document.querySelector('#trend .tmx.gal'), first: document.querySelector('#trend .mc .nm').textContent, chips: [...document.querySelectorAll('[data-cols]')].map((x) => x.textContent) }));
+    ok(g3.gal && g3.cells === 100 && g3.cols === 3 && g3.chips.join() === '2,3,4,5' && g3.first === 'Rs_M1', `single group → gallery, 3 columns by default, ${g3.cells} cells in layer order (first ${g3.first})`);
+    await page.evaluate(() => document.querySelector('[data-cols="5"]').click()); await page.waitForTimeout(400);
+    let d5 = 0; for (let k = 0; k < 60; k++) { await page.waitForTimeout(150); const n = await page.evaluate(() => document.querySelectorAll('#trend .js-plotly-plot').length); if (n === d5 && n > 0 && k > 6) break; d5 = n; }
+    const g5 = await page.evaluate(() => ({ cols: getComputedStyle(document.querySelector('#trend .tmx')).gridTemplateColumns.split(' ').length, h: document.querySelector('#trend .mc .plot').getBoundingClientRect().height, sz: document.querySelector('#trend .js-plotly-plot').data.find((d) => d.meta && d.meta.role === 'pts').marker.size, stored: localStorage.getItem('pdat:rpt-trend-cols') }));
+    ok(g5.cols === 5 && Math.round(g5.h) === 140 && (Array.isArray(g5.sz) ? g5.sz[0] : g5.sz) <= 3.5 && g5.stored === '5', `5 columns: 140 px cells, smaller markers, choice remembered (${d5} charts drawn)`);
+    await page.evaluate(() => { document.querySelector('[data-cols="3"]').click(); localStorage.removeItem('pdat:rpt-trend-cols'); }); await page.waitForTimeout(300);
     await page.click('#tabs button[data-tab=report]');
   });
   // ---- v3.6 setup page: 機台欄 checklist present, unticking a column removes it from the tool scan

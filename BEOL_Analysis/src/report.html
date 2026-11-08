@@ -11,7 +11,7 @@
 <header class="top">
   <div class="brand"><b>BEOL 分析戰報</b><span>Cu interconnect · BSL vs CIP</span><em id="ver"></em></div>
   <nav class="mods" id="mods"><button data-mod="wat" class="on">WAT</button><button data-mod="inline">Inline</button><button data-mod="yield" disabled>Yield</button></nav>
-  <label class="btn primary file-btn">匯入 Excel／CSV<input type="file" id="file" accept=".xlsx,.xls,.xlsm,.csv" hidden><input type="file" id="kbFile" accept=".json,.xlsx,.xls,.csv" hidden><input type="file" id="file2" accept=".xlsx,.xls,.xlsm,.csv" hidden></label>
+  <label class="btn primary file-btn">匯入 Excel／CSV<input type="file" id="file" accept=".xlsx,.xls,.xlsm,.csv,.tsv,.txt,.jmp" hidden><input type="file" id="kbFile" accept=".json,.xlsx,.xls,.csv" hidden><input type="file" id="file2" accept=".xlsx,.xls,.xlsm,.csv,.tsv,.txt,.jmp" hidden></label>
   <span class="file-chip" id="fileChip">尚未匯入資料</span>
   <button class="btn" id="btnLink" disabled title="再匯入一個檔案（機台履歷、yield…），以 wafer id 連到目前資料">＋ 連結資料</button>
   <span class="spacer"></span>
@@ -42,7 +42,7 @@
 <div class="busy" id="busy" hidden></div>
 <div id="toasts"></div>
 <!--INLINE:../vendor/xlsx.full.min.js-->
-<!--INLINE:../vendor/plotly.min.js-->
+<!--INLINE:../vendor/plotly-cartesian.min.js-->
 <!--INLINE:../vendor/pptxgen.bundle.js-->
 <!--INLINE:js/core.js-->
 <!--INLINE:js/importer.js-->

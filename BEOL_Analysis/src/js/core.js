@@ -133,15 +133,15 @@
   App.getDataset = (id) => App.state.datasets.find((d) => d.id === id);
 
   // ---------------- toast ----------------
-  App.toast = (msg, kind = 'info') => {
+  App.toast = (msg, kind = 'info', ms) => {
     const host = document.getElementById('toasts');
     if (!host) return;
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
     el.textContent = msg;
     host.appendChild(el);
-    setTimeout(() => el.classList.add('hide'), 3200);
-    setTimeout(() => el.remove(), 3800);
+    setTimeout(() => el.classList.add('hide'), ms || 3200);
+    setTimeout(() => el.remove(), (ms || 3200) + 600);
   };
 
   // ---------------- storage (safe) ----------------

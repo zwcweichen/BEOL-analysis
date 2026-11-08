@@ -294,6 +294,14 @@ BEOL 後段製程（Cu interconnect）固定流程的 BSL vs CIP 比較工具。
 
 戰報頁、匯出 HTML、複製結論、PPT 結論頁不再出現「資料品質」與「燈號門檻」說明；Condition 列只剩 K／LK 門檻輸入；灰格原因不帶「請人工判讀」；固定值類別標題寫「固定值 20」。無知識庫的建議檢查維持：Rs → 同層 THK＋metal CD、Rc → 同層 via CD、LK → 同層 CD，資料沒有時列為缺資料列。
 
+## 0.24 v3.12 匯入格式、顏色套用、x 軸刻度、Trend 矩陣多欄
+
+**匯入**：CSV／TSV／TXT（SheetJS 文字解析）；.jmp 二進位檔無法直接讀，匯入時提示用 JMP 匯出 CSV／Excel（附 JSL 一行）。**顏色**：拖色盤只預覽（hex 與膠囊色點），放開或按「套用」才重繪一次。**x 軸**（`seqTicks`）：wafer 順序為 x，刻度吸附到排序欄值改變處並以該值標示（日期 MM/DD、跨年 YY/MM/DD、lot、數值），刻度數依圖大小 3／5／7／10。**Trend 矩陣**：單一組改為多欄畫廊（2～5 欄，預設 3，記住選擇；4～5 欄點縮小），多組維持「組 = 欄」。測試資料 `gen_scale.py`：P_items100（100 item）、R_10k、Q_100k（CSV）。
+
+## 0.25 v3.13 健檢：體積、死碼、接手摘要
+
+Plotly 改 cartesian 子集（報表只用 scatter／bar／box），完整版 HTML 6.3 → 3.1 MB；移除 scattergl 用法與無人呼叫的 `E.dataQualityLines`／`figCache`／`HI_DIM`。效能現況與下一步寫在 AGENTS.md §0.4。AGENTS.md 新增 §0 接手摘要供其他對話／AI 工具接續。
+
 ---
 
 ## 1. 流程

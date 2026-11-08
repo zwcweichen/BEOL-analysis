@@ -8,7 +8,7 @@
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
     hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' }, qt: { mode: 'abn' } });
-  App.VERSION = '3.11';
+  App.VERSION = '3.13';
   /** 知識庫建議開關（預設關）：關 = 建議檢查只列資料能互相對照的 item（同層／鄰層 inline、WAT、yield、機台），不給物理原因；開 = 加上知識庫的檢查與機制 */
   S.kbOn = !!App.store.get('rpt-kb-on', false);
   const $ = (id) => document.getElementById(id);
@@ -118,6 +118,7 @@
   // ================================================================ data layer: link a second file by wafer id
   async function linkFile(file) {
     if (!S.dsRaw || !S.cfg?.waferCol) { App.toast('請先匯入主要資料', 'err'); return; }
+    if (jmpGuard(file)) return;
     try {
       const t0 = performance.now();
       const wb = await App.importer.readFile(file);
@@ -177,7 +178,14 @@
     b.innerHTML = `<div class="pl">${esc(STAGES[stage] || stage)}${file ? `　<span class="muted2">${esc(file.name)}${file.size ? ` · ${(file.size / 1048576).toFixed(1)} MB` : ''}</span>` : ''}<span class="pp">${i + 1}/${STAGE_ORDER.length}</span></div><div class="pb"><i style="width:${Math.round(p * 100)}%" class="${pct == null ? 'ind' : ''}"></i></div>`;
     await paint();
   }
+  /** v3.12: a JMP data table (.jmp) is a binary format without an open parser — explain the one-line JSL export instead of failing on parse */
+  function jmpGuard(file) {
+    if (!/\.jmp$/i.test(file.name)) return false;
+    App.toast(`${file.name} 是 JMP 資料表（二進位格式）。請在 JMP 以 File ▸ Export 存成 CSV 或 Excel 再匯入；或在 JSL 執行：dt = Open("${file.name}"); dt << Save("${file.name.replace(/\.jmp$/i, '.csv')}");`, 'err', 12000);
+    return true;
+  }
   async function loadFile(file, sheet) {
+    if (jmpGuard(file)) return;
     try {
       const t0 = performance.now();
       const { src, ds, siteDs } = await E.load(file, sheet, (st, pct) => progress(st, pct, file));
@@ -267,7 +275,7 @@
     const flag = new Map(o.rows.map((r) => [r.wafer, r]));
     const pts = ord.map((r, i) => ({ i, w: r[c.waferCol], g: c.groupCol ? E.cat(r[c.groupCol]) : '全部', cd: E.cat(r[c.condCol]), v: r[cur] }));
     const data = [];
-    for (const cd of [c.baseline, ...c.cips]) { const a = pts.filter((q) => q.cd === cd && !flag.has(q.w)); if (a.length) data.push({ type: a.length > 3000 ? 'scattergl' : 'scatter', mode: 'markers', name: cd, x: a.map((q) => q.i), y: a.map((q) => q.v), text: a.map((q) => q.w), customdata: a.map((q) => [q.w, q.g, q.cd, q.v]), marker: { color: condColor(cd), size: 5, opacity: 0.55 }, hovertemplate: '%{text}<br>%{y}<extra>' + esc(cd) + '</extra>', meta: { cond: cd, role: 'pts' } }); }
+    for (const cd of [c.baseline, ...c.cips]) { const a0 = pts.filter((q) => q.cd === cd && !flag.has(q.w)), a = a0.length > 3000 ? sample(a0, 3000) : a0; if (a.length) data.push({ type: 'scatter', mode: 'markers', name: cd, x: a.map((q) => q.i), y: a.map((q) => q.v), text: a.map((q) => q.w), customdata: a.map((q) => [q.w, q.g, q.cd, q.v]), marker: { color: condColor(cd), size: 5, opacity: 0.55 }, hovertemplate: '%{text}<br>%{y}<extra>' + esc(cd) + '</extra>', meta: { cond: cd, role: 'pts' } }); }
     const fl = pts.filter((q) => flag.has(q.w) && !flag.get(q.w).excluded), ex = pts.filter((q) => flag.has(q.w) && flag.get(q.w).excluded);
     if (fl.length) data.push({ type: 'scatter', mode: 'markers', name: '極端值（待確認）', x: fl.map((q) => q.i), y: fl.map((q) => q.v), text: fl.map((q) => q.w), customdata: fl.map((q) => [q.w, q.g, q.cd, q.v]), marker: { color: 'rgba(0,0,0,0)', size: 11, line: { color: '#c2410c', width: 2 } }, hovertemplate: '%{text}<br>%{y}<extra>極端值</extra>' });
     if (ex.length) data.push({ type: 'scatter', mode: 'markers', name: '已移除', x: ex.map((q) => q.i), y: ex.map((q) => q.v), text: ex.map((q) => q.w), marker: { color: '#98a2b3', size: 8, symbol: 'x' }, hovertemplate: '%{text}<br>%{y}<extra>已移除</extra>' });
@@ -296,7 +304,6 @@
     visInit();
     applyPrep();
     S.res = E.compute(S.ds, S.cfg, S.grain === 'wafer' ? S.siteDs : []);
-    figCache.clear();
     S.dirty = { report: true, trend: true, corr: true, qt: true };
     S.corr.y = null; S.hl = { wat: 0, inline: 0 }; S.hlf = { lv: 'all', group: '' }; S.rowf = { abn: false, layers: [] };
     closeAllWins();
@@ -356,13 +363,17 @@
     const pop = document.createElement('div'); pop.className = 'cpop';
     const cur = condColor(cond);
     pop.innerHTML = `<div class="cp-h">${esc(cond)}</div><div class="cp-sw">${SWATCH.map((h) => `<span class="sw ${h === cur ? 'on' : ''}" data-h="${h}" style="background:${h}"></span>`).join('')}</div>
-      <div class="cp-row"><input class="cp-hex" value="${esc(cur)}" maxlength="7" spellcheck="false"><label class="btn sm">自訂…<input type="color" class="cp-pick" value="${esc(cur)}"></label><button class="btn sm" data-reset>預設</button></div>`;
+      <div class="cp-row"><input class="cp-hex" value="${esc(cur)}" maxlength="7" spellcheck="false"><label class="btn sm">自訂…<input type="color" class="cp-pick" value="${esc(cur)}"></label><button class="btn sm primary" data-apply disabled>套用</button><button class="btn sm" data-reset>預設</button></div>`;
     document.body.appendChild(pop);
     const r = anchor.getBoundingClientRect(); pop.style.left = `${Math.min(innerWidth - 300, r.left)}px`; pop.style.top = `${r.bottom + 6 + scrollY}px`;
     const set = (h, close) => { if (!/^#[0-9a-f]{6}$/i.test(h)) return; S.vis.colors[cond] = h.toLowerCase(); visSave(); applyVis(); pop.querySelectorAll('.sw').forEach((x) => x.classList.toggle('on', x.dataset.h === h.toLowerCase())); pop.querySelector('.cp-hex').value = h.toLowerCase(); pop.querySelector('.cp-pick').value = h.toLowerCase(); if (close) pop.remove(); };
     pop.querySelectorAll('.sw').forEach((x) => (x.onclick = () => set(x.dataset.h, true)));
     pop.querySelector('.cp-hex').addEventListener('change', (e) => set(e.target.value.trim().startsWith('#') ? e.target.value.trim() : '#' + e.target.value.trim(), false));
-    pop.querySelector('.cp-pick').addEventListener('input', (e) => set(e.target.value, false));
+    // v3.12: dragging the native picker only previews on the chip + hex field (one DOM write); charts redraw once, when the picker closes (change) or 套用 is pressed
+    const preview = (h) => { if (!/^#[0-9a-f]{6}$/i.test(h)) return; pop.querySelector('.cp-hex').value = h.toLowerCase(); const dot = anchor.closest('.cchip')?.querySelector('.dot') || anchor; dot.style.background = h; pop.querySelector('[data-apply]').disabled = false; };
+    pop.querySelector('.cp-pick').addEventListener('input', (e) => preview(e.target.value));
+    pop.querySelector('.cp-pick').addEventListener('change', (e) => set(e.target.value, false));
+    pop.querySelector('[data-apply]').onclick = () => set(pop.querySelector('.cp-hex').value.trim(), true);
     pop.querySelector('[data-reset]').onclick = () => { delete S.vis.colors[cond]; visSave(); applyVis(); pop.remove(); };
     setTimeout(() => document.addEventListener('mousedown', function h(e) { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', h); } }), 0);
   }
@@ -583,6 +594,26 @@
     const xs = useCol ? ord.map((q) => q[by]) : ord.map((_, i) => i);
     return { xs, useCol, type: useCol ? (t === 'datetime' ? 'date' : 'linear') : 'linear', title: useCol ? by : `wafer 順序（依 ${short(by)}）`, wrap: useCol && t === 'datetime' ? (v) => new Date(v) : (v) => v };
   }
+  /** v3.12 x ticks for wafer-order charts: k evenly spaced positions snapped to where the ordering column changes value (new day / lot), labelled with that value */
+  function seqTicks(ord, k) {
+    const n = ord.length; if (!n) return null;
+    const by = orderBy(), t = colType(by);
+    const lab = (row) => { const v = row[by]; if (v == null || v === '') return ''; if (t === 'datetime') { const d = v instanceof Date ? v : App.toDate(v); return d ? App.fmtDate(d).slice(5, 10) : String(v); } return typeof v === 'number' ? f4(v) : String(v).length > 10 ? String(v).slice(0, 10) + '…' : String(v); };
+    const yr = (row) => { const v = row[by]; const d = t === 'datetime' ? (v instanceof Date ? v : App.toDate(v)) : null; return d ? d.getFullYear() : null; };
+    const multiYear = t === 'datetime' && yr(ord[0]) != null && yr(ord[n - 1]) != null && yr(ord[0]) !== yr(ord[n - 1]);
+    const labY = multiYear ? (row) => { const v = row[by]; const d = v instanceof Date ? v : App.toDate(v); return d ? App.fmtDate(d).slice(2, 10) : lab(row); } : lab;
+    const kk = Math.max(2, Math.min(k, n)), step = (n - 1) / (kk - 1), vals = [], txts = [];
+    for (let i = 0; i < kk; i++) {
+      const idx = Math.round(i * step), lo = Math.max(1, Math.round(idx - step / 2)), hi = Math.min(n - 1, Math.round(idx + step / 2));
+      let best = idx, bestD = Infinity;   // nearest boundary where the label changes
+      for (let j = lo; j <= hi; j++) if (labY(ord[j]) !== labY(ord[j - 1]) && Math.abs(j - idx) < bestD) { best = j; bestD = Math.abs(j - idx); }
+      if (i === 0) best = 0;
+      const txt = labY(ord[best]);
+      if (txts.length && txts[txts.length - 1] === txt) continue;
+      vals.push(best); txts.push(txt);
+    }
+    return { tickvals: vals, ticktext: txts };
+  }
   const trendXCtrl = () => `<span>X 軸</span><span class="chips"><span class="chip ${S.trend.x !== 'col' ? 'on' : ''}" data-x="seq">wafer 順序</span><span class="chip ${S.trend.x === 'col' ? 'on' : ''}" data-x="col" ${colType(orderBy()) === 'text' ? 'title="排序欄是文字，無法當 X 值" style="opacity:.45"' : ''}>欄位值</span></span>
     <span>排序依</span><select data-xby>${orderCols().map((n) => `<option value="${esc(n)}" ${n === orderBy() ? 'selected' : ''}>${esc(short(n))}</option>`).join('')}</select>`;
   function bindTrendX(el, redraw) {
@@ -619,14 +650,14 @@
     const bShow = sample(bsl, mini ? 700 : 1500);
     const bFail = bShow.map((p) => isFail(p.y));
     data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `BSL ${c.baseline}` : `BSL ${c.baseline}（N ${bsl.length}）${it.metric === 'rate' && c0 ? `  異常 ${pct(c0.rateB)}` : ''}`, x: bShow.map((p) => p.x), y: bShow.map((p) => p.y), text: bShow.map((p) => p.w),
-      marker: { color: bFail.some(Boolean) ? bFail.map((f) => (f ? '#4b5563' : condColor(c.baseline))) : condColor(c.baseline), size: big ? 6 : mini ? 3.5 : 4.5 }, hovertemplate: '%{text}<br>%{y}<extra>BSL</extra>', meta: bFail.some(Boolean) ? { fail: bFail } : {} }, c.baseline, 'pts'));
+      marker: { color: bFail.some(Boolean) ? bFail.map((f) => (f ? '#4b5563' : condColor(c.baseline))) : condColor(c.baseline), size: big ? 6 : opts.dense ? 2.5 : mini ? 3.5 : 4.5 }, hovertemplate: '%{text}<br>%{y}<extra>BSL</extra>', meta: bFail.some(Boolean) ? { fail: bFail } : {} }, c.baseline, 'pts'));
     for (const p of c.cips) {
       const cpAll = pts.filter((q) => q.c === p), cp = mini ? sample(cpAll, 900) : cpAll;   // v3.8: thumbnails cap CIP points too (stats use every wafer)
       if (!cp.length) continue;
       const cell = r.cells[itemName]?.[group]?.[p];
       const lab = !cell || cell.level === 'na' ? '' : `  ${shiftTxt(cell)}`;
       data.push(tag({ type: 'scatter', mode: 'markers', name: many ? `${p}${lab}` : `CIP ${p}${lab}（N ${cpAll.length}）`, x: cp.map((q) => q.x), y: cp.map((q) => q.y), text: cp.map((q) => q.w),
-        marker: { color: condColor(p), size: cp.map((q) => (isFail(q.y) ? (big ? 11 : 8.5) : big ? 8 : mini ? 5 : 7)), symbol: cp.map((q) => (isFail(q.y) ? 'diamond' : 'circle')),
+        marker: { color: condColor(p), size: cp.map((q) => (isFail(q.y) ? (big ? 11 : 8.5) : big ? 8 : opts.dense ? 3.5 : mini ? 5 : 7)), symbol: cp.map((q) => (isFail(q.y) ? 'diamond' : 'circle')),
           line: { width: cp.map((q) => (isFail(q.y) ? 1.4 : 0)), color: cp.map((q) => (isFail(q.y) ? '#c2410c' : condColor(p))) } },
         hovertemplate: `%{text}<br>%{y}<extra>${esc(p)}</extra>` }, p, 'pts'));
       const cx = cp.map((q) => q.x).filter((v) => v != null), x0 = useDate ? new Date(Math.min(...cx)) : Math.min(...cx), x1 = useDate ? new Date(Math.max(...cx)) : Math.max(...cx);
@@ -637,6 +668,7 @@
     L.shapes = shapes;
     L.xaxis.type = tx.type; L.xaxis.zeroline = false;
     L.xaxis.title = { text: tx.title, font: { size: 10.5, color: '#667085' } };
+    if (!tx.useCol && !opts.noSeqTicks) { const tk = seqTicks(sorted, opts.mini ? 3 : opts.big ? 10 : opts.compact ? 5 : 7); if (tk) { L.xaxis.tickmode = 'array'; L.xaxis.tickvals = tk.tickvals; L.xaxis.ticktext = tk.ticktext; L.xaxis.tickangle = 0; } }
     L.yaxis.title = axTitle(itemName, isLog(itemName) ? '，log' : '');
     if (isLog(itemName)) L.yaxis.type = 'log';
     if (opts.compact) { L.showlegend = true; L.legend = { orientation: 'h', x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', font: { size: many ? 10 : 11 }, itemwidth: 30 }; L.margin = { l: 46, r: 8, t: many ? 46 : 26, b: 34 }; }
@@ -695,7 +727,6 @@
     el.querySelectorAll('.mc').forEach((x) => ioP.observe(x));
   }
   let ioP = null;
-  const figCache = new Map();   // v3.8: reserved for per-(item, group) precomputation; cleared on every generate()
 
   function waferInfo() {
     if (S._wInfo && S._wInfo.res === S.res) return S._wInfo.m;
@@ -792,7 +823,6 @@
   }
   const resetPlotQ = () => { plotQ.gen++; plotQ.q.length = 0; };
   // ---- v3.4 live condition style: highlight on legend click, restyle colours / reorder layers on every chart currently in the page
-  const HI_DIM = 0.12;   // (legacy opacity; v3.9 dims by tint instead — see tint())
   /** blend a #rrggbb colour towards white: tint('#1f3fbf', 0.75) → light blue (JMP's de-emphasised series look) */
   const tint = (hex, f = 0.75) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim()); if (!m) return hex; const n = parseInt(m[1], 16); const ch = (v) => Math.round(v + (255 - v) * f); return `rgb(${ch(n >> 16)},${ch((n >> 8) & 255)},${ch(n & 255)})`; };
   /** legend click = highlight that condition (click again = back); double-click = clear all. Hiding traces is gone. */
@@ -1489,26 +1519,34 @@ ${linkChip()}</div>`;
     const chips = [['abn', `異常與觀察（${abn.length}）`], ['all', `全部 ${MOD[mode]}（${mine.length}）`]];
     if (r.items.length > mine.length) chips.push(['inl', `全部 item（${r.items.length}）`]);
     const G = r.groups, layers = layersOf(mode);
+    const cols = S.trend.cols || App.store.get('rpt-trend-cols', 3);
+    const plotH = G.length > 1 ? 165 : { 2: 190, 3: 165, 4: 150, 5: 140 }[cols] || 165;
     el.innerHTML = `<div class="ctrl">
         <span>顯示</span><span class="chips">${chips.map(([k, l]) => `<span class="chip ${S.trend.mode === k ? 'on' : ''}" data-mode="${k}">${l}</span>`).join('')}</span>
         ${layers.length > 1 ? `<span>層別</span><span class="chips">${layers.map((L) => `<span class="chip ${S.rowf.layers.includes(L) ? 'on' : ''}" data-rlayer="${esc(L)}">${esc(L)}</span>`).join('')}</span>` : ''}
         ${trendXCtrl()}
       </div>
-      ${list.length ? `<div class="tmx" style="grid-template-columns:150px repeat(${G.length}, minmax(${G.length > 4 ? 200 : 240}px, 1fr))">
+      ${G.length === 1 ? `<span>欄數</span><span class="chips">${[2, 3, 4, 5].map((n) => `<span class="chip ${cols === n ? 'on' : ''}" data-cols="${n}">${n}</span>`).join('')}</span>` : ''}
+      ${list.length ? (G.length === 1
+        // v3.12 single group → gallery: N items per row (default 3), each cell carries its own item header; fewer scrolls, points still legible
+        ? `<div class="tmx gal c${cols}" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr))">${list.map((it) => { const g = G[0], x0 = r.cells[it.name][g];
+            return `<div class="mc ${cellWorst(x0, it.kind)}" data-item="${esc(it.name)}" data-group="${esc(g)}" data-cip="${esc(c.cips[0])}" title="點擊放大"><div class="mh"><b class="nm">${esc(short(it.name))}</b><span class="un">${esc(unit(it.name))}${it.metric === 'fold' ? '・log' : ''}</span>${c.cips.map((p) => `<span class="pill ${x0[p].level}">${c.cips.length > 1 ? `${esc(p)} ` : ''}${esc(shiftTxt(x0[p]))}</span>`).join('')}</div><div class="plot"></div></div>`; }).join('')}</div>`
+        : `<div class="tmx" style="grid-template-columns:150px repeat(${G.length}, minmax(${G.length > 4 ? 200 : 240}px, 1fr))">
         <div class="th corner">${esc(c.groupCol ? `${c.groupCol} →` : '')}</div>${G.map((g) => `<div class="th">${esc(c.groupCol ? g : `${c.cips.join('、')} vs ${c.baseline}`)}</div>`).join('')}
         ${list.map((it) => `<div class="rh ${itemWorst(it, mode)}"><b>${esc(short(it.name))}</b><span>${esc(unit(it.name))}</span><span>${esc(RU.byId(it.cat).label.split('（')[0])}${it.metric === 'fold' ? '・log 軸' : it.metric === 'rate' ? `・固定值 ${f4(it.target)}` : ''}</span></div>` +
           G.map((g) => {
             const x0 = r.cells[it.name][g];
             return `<div class="mc ${cellWorst(x0, it.kind)}" data-item="${esc(it.name)}" data-group="${esc(g)}" data-cip="${esc(c.cips[0])}" title="點擊放大"><div class="mh">${c.cips.map((p) => `<span class="pill ${x0[p].level}">${c.cips.length > 1 ? `${esc(p)} ` : ''}${esc(shiftTxt(x0[p]))}</span>${it.kind === 'inline' && isAbnL(x0[p].varLevel) ? `<span class="pill ${x0[p].varLevel}">σ ×${Math.max(x0[p].sdRatio || 0, x0[p].wiwRatio || 0).toFixed(1)}</span>` : ''}`).join('')}</div><div class="plot"></div></div>`;
-          }).join('')).join('')}</div>` : `<div class="empty">目前沒有黃燈或橘燈的 ${MOD[mode]} item。切換到「全部 ${MOD[mode]}」可以看全部 trend。</div>`}`;
+          }).join('')).join('')}</div>`) : `<div class="empty">目前沒有黃燈或橘燈的 ${MOD[mode]} item。切換到「全部 ${MOD[mode]}」可以看全部 trend。</div>`}`;
     el.querySelectorAll('[data-mode]').forEach((x) => (x.onclick = () => { S.trend.mode = x.dataset.mode; renderTrend(); }));
+    el.querySelectorAll('[data-cols]').forEach((x) => (x.onclick = () => { S.trend.cols = +x.dataset.cols; App.store.set('rpt-trend-cols', S.trend.cols); renderTrend(); }));
     bindTrendX(el, renderTrend);
     el.querySelectorAll('[data-rlayer]').forEach((b) => (b.onclick = () => { const L = b.dataset.rlayer; S.rowf.layers = S.rowf.layers.includes(L) ? S.rowf.layers.filter((x) => x !== L) : [...S.rowf.layers, L]; S.dirty.report = true; renderTrend(); }));
     if (io) io.disconnect();
     io = new IntersectionObserver((ents) => ents.forEach((en) => {
       if (!en.isIntersecting) return;
       const cell = en.target; io.unobserve(cell);
-      queuePlot(cell.querySelector('.plot'), () => trendFig(cell.dataset.item, cell.dataset.group, 165, { mini: true }));
+      queuePlot(cell.querySelector('.plot'), () => trendFig(cell.dataset.item, cell.dataset.group, plotH, { mini: true, dense: G.length === 1 && cols >= 4 }));
     }), { rootMargin: '300px' });
     el.querySelectorAll('.mc').forEach((x) => io.observe(x));
   }
@@ -2245,5 +2283,5 @@ body{background:#f4f6f9}.report{background:#fff;border:1px solid #e3e7ee;border-
     App.toast('已複製結論文字，可以直接貼到 mail 或 chat', 'ok');
   }
 
-  App.rptUI = { applyVis, visInit, openColorPop, renderPrep, applyPrep, prepPending, crossChecks, factorVerdict, figPng, trendFig, mainFig, partnerFig, checkRows, loadFile, linkFile, unlink, openToolWin, checkHint, generate, showTab, setMode, exportHtml, exportPpt, buildHtml, buildPpt, buildPptStack, exportPptStack, stackLayout, qStats, qFig, renderQuantile, sortLayer, summary, openCell, openCorrWin, closeAllWins, selectHL, wins: WM, kbImport, kbSave, kbOverlay };
+  App.rptUI = { applyVis, visInit, openColorPop, renderPrep, applyPrep, prepPending, crossChecks, factorVerdict, figPng, trendFig, mainFig, partnerFig, checkRows, loadFile, linkFile, unlink, openToolWin, checkHint, generate, showTab, setMode, exportHtml, exportPpt, buildHtml, buildPpt, buildPptStack, exportPptStack, stackLayout, qStats, qFig, renderQuantile, sortLayer, seqTicks, summary, openCell, openCorrWin, closeAllWins, selectHL, wins: WM, kbImport, kbSave, kbOverlay };
 })();

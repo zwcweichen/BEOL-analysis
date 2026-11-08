@@ -586,18 +586,6 @@
     return d > 0 ? (n * sxy - sx * sy) / d : null;
   };
   /** data-quality lines with the same item / same cause merged: "CIP-C 在 P2 沒有 wafer", "Rc_V1 @ G1：BSL σ = 0" */
-  E.dataQualityLines = (res, cfg, mode) => {
-    const na = res.naList[mode], out = [], used = new Set();
-    const nItems = res.items.filter((i) => i.kind === mode).length, multiG = res.groups.length > 1;
-    for (const g of res.groups) for (const c of cfg.cips) {
-      const hit = na.filter((x) => x.group === g && x.cip === c && x.reason === `${c} 無資料`);
-      if (nItems > 1 && hit.length === nItems) { out.push(`${c}${multiG ? ` 在 ${g}` : ''} 沒有 wafer`); hit.forEach((x) => used.add(x)); }
-    }
-    const rest = na.filter((x) => !used.has(x)), byKey = new Map();
-    for (const x of rest) { const k = `${RU().parseName(x.item.name).short}${multiG ? ` @ ${x.group}` : ''}：${x.reason}`; if (!byKey.has(k)) byKey.set(k, 0); byKey.set(k, byKey.get(k) + 1); }
-    for (const [k, n] of byKey) out.push(n > 1 && !/無資料/.test(k) ? k : k);
-    return out;
-  };
   E.summaryText = (res, cfg, meta, mode = 'wat') => {
     const L = [], th = res.th;
     const f4 = (v) => (typeof v === 'number' && isFinite(v) ? (Math.abs(v) < 1e-3 && v !== 0 ? v.toExponential(3) : String(+v.toPrecision(4))) : '—');

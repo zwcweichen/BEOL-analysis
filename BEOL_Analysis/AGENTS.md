@@ -1,7 +1,73 @@
 # BEOL_Analysis：Agent 接手文件
 
 > 給接手的 AI agent（或工程師）閱讀。讀完這份就能繼續開發，不必回頭看對話紀錄。
-> 版本：BEOL 分析戰報 **v3.11**（2026-11-02）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
+> 版本：BEOL 分析戰報 **v3.13**（2026-11-09）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
+
+---
+
+## 0. 接手摘要（Update summary，2026-11-09 整理）
+
+> 這一節是「接續記憶」用：另一個對話或另一個 AI 工具讀完這節，就知道現在系統長什麼樣、哪些是使用者定案不能改、哪些還沒做。細節再往下翻。
+
+### 0.1 現在的系統（v3.13）一眼看完
+
+| 面向 | 現況 |
+|---|---|
+| 成品 | `BEOL_Report.html`（離線完整版 **3.1 MB**，v3.13 起 Plotly 改用 cartesian 子集）、`BEOL_Report_lite.html`（0.39 MB，程式庫走 cdn.jsdelivr.net）、`make_BEOL_Analysis(_lite).py` 單一 Python 產生器可展開整個專案 |
+| 匯入 | Excel（xlsx／xls／xlsm）、CSV／TSV／TXT；寬表（by wafer）與長表（by site）；欄名不固定靠自動判斷；`.jmp` 不能直接讀（二進位），匯入時提示用 JMP 匯出 CSV（附 JSL 一行）。解析在 **Web Worker**，六段進度條（讀取→解析→整理→判斷欄位→統計→畫戰報）；31k 列 6–8 s、100k 列 CSV 6.3 s |
+| 前處理分頁 ⓪ | 重複 wafer（保留／平均／第一筆／刪除）、單位不同（×10ⁿ 一鍵換算）、極端值（MAD |z|>6，尾巴規則只提示不標）——系統提示、使用者確認 |
+| 戰報總覽 ① | 左點燈表（自動／標準／緊湊／熱圖）、右 HL 清單＋細節（trend、同層相關圖、建議檢查）。燈號：K 類 σ、LK 倍數（log）、**固定值類（SPA）＝全部等於固定值 → 綠「=20」，有 wafer 偏離 → 灰「n片≠20」交工程師判讀，永遠不是 HL** |
+| 建議檢查 | 知識庫**預設關**：只列資料能互相對照的項目——依 item 的 pairs 列同層對應 inline（Rs → THK＋metal CD、Rc → via CD、LK → CD），資料沒有該欄仍列為「○ 缺資料」；同組 yield；機台／chamber（只給路線，不下評語）。**鄰層（跨層）只在知識庫開啟時出現**。每列 🔍 開檢查視窗（相關圖、上下兩面板共振 trend）或機台視窗 |
+| 機台分析 | 文字欄角色 **機台／其他**（`E.TOOL_RX`／`E.NOT_TOOL_RX`），設定頁第 3 區「機台欄」可勾選；Part ID／Lot／備註不會被當機台。視窗：run 貨比例長條、每週 run 貨、box plot＋K 標註；無「出現期間」文字 |
+| Trend 矩陣 ② | 多組：欄 = 組；單一組：**畫廊 2／3／4／5 欄（預設 3，記住選擇）**，4–5 欄點縮小。x 軸 = wafer 順序，**刻度吸附到排序欄值改變處並以該值標示**（日期 MM/DD、跨年 YY/MM/DD、lot）。縮圖排隊一張一個 task，第一張 < 1 s |
+| Correlation ③ | 依物理關係自動配對；每條件各自回歸；**全部 SVG scatter**（不用 scattergl，否則圖層順序拖不動） |
+| Quantile ④ | JMP Fit Y by X 樣式 Normal Quantile plot（x 量測值、y 常態分位 0.0001…0.9999，每條件一條線），pill 只顯示 K-shift |
+| 條件樣式 | Condition 列膠囊可**拖曳改圖層順序**（最左最上，BSL 預設最下）、**色點改色**（色票即時；拖色盤只預覽，放開或「套用」才重繪）、**圖例單擊凸顯**（其餘條件變淡色 tint 78%，不透明）、雙擊恢復。所有 trace 帶 `meta.cond`，`applyVis` 用 Plotly.react 不重算 |
+| PPT「戰報」 | 封面 → 點燈表（N 一致時片數進表頭；**先縮字 11→8.5pt 再分頁**，類別標題不留頁尾）→ HL 總表 → HL 細節（trend＋相關圖＋K 表＋建議檢查＋同組其他 item）→ 總覽 trend（1×1／1×2／2×2 自適應，綠燈 3×3 附錄平均分頁）→ 結論。設計語言見 `docs/PPT_STYLE.md`（紅標題＝現象＋偏移、藍數字、☐ 區塊標題、K 小表、深灰頁尾只放頁碼；無來源列、無說明小字） |
+| PPT「排排站」 | 每模組：點燈表 → trend 排排站 → quantile 排排站。每頁：標題 → **黑框 comment 方框（● Wording）** → 組名＋小圖例「■ A廠 BSL　■ B廠 CIP」→ 列（名稱連續表格｜圖＋mean（片數小字）｜K-shift 燈號色）。每組自成欄（≤7 列，否則等分），每頁兩欄，單欄頁整頁寬；quantile 列 ≤5、圖寬 ≤ 2×列高，P50／片數寫在圖右側；item 依 **(Mx, Vx−1) 同層排序**（M1、M2、V1、M3、V2…） |
+| 文字原則 | 介面與 PPT **不放解釋系統設定的小字**（資料品質、燈號門檻、判定規則、請人工判讀…都已移除）；標題只寫現象；偏移一位小數；r 只在檢查視窗看得到 |
+
+### 0.2 使用者定案（不要再改回去）
+
+1. 單一 HTML 離線；lite 版走 CDN；單一 Python 產生器。欄名不固定、缺欄位不能擋。
+2. K-shift 以 mean 為準（不改 median）；低 N 不另外處理；yield 規則、rate 散佈、campaign／time-aligned BSL 皆**略過**（使用者決定）。
+3. 前處理放在獨立分頁，系統提示、使用者確認；交叉比對卡片移除；同 item 的均值／變異 HL 合併；摘要不重複。
+4. r 不顯示在戰報／PPT／摘要；知識庫建議預設關；鄰層檢查屬知識庫。
+5. 機台欄：CIP 走的機台沒有 BSL 可對照時**不下評語**（跨廠 BSL／CIP 是常態）。
+6. 固定值 item（SPA）：綠／灰二值，不用 % 門檻，不進 HL，PPT 只標 mean。
+7. PPT：標題＝item＋偏移；不放 a／b 小標、不放來源列、不放片數在句子裡（片數只在格子小字／mean 下括號）；偏移一位小數；條件圖例要寫清楚哪個顏色是哪個條件。
+8. 點：實心、無白邊、無透明；凸顯用淡色不用透明。
+9. 只改 `BEOL_Analysis` 資料夾（不要動 `BEOL_Analysis_Claude module`）。
+10. GitHub 從雲端 session 推送會 403：**只在本機 commit，並產出 git bundle**（`Claude outputs\Data-analysis-tool_vX.Y.bundle`）；使用者自己 `git pull <bundle> main` 到 `C:\Github\BEOL-analysis` 再 push。
+11. claude.ai Project 只放原始碼與 lite 版，不放完整版 HTML。
+
+### 0.3 每版流程（三角色內審）
+
+A 開發／製程整合主管 → B 使用者模擬（每版產 1～2 份**新**模擬資料，`sample_data/gen_*.py`）→ C 使用者體驗（審 HTML 畫面與兩份 PPT 的截圖：圖是否超出頁面、點是否清晰、資訊是否齊、排版是否整齊、一頁一個問題）。發現與決策寫進 `docs/build_review_log.py` → `docs/REVIEW_LOG.xlsx`（欄位：版本、日期、角色、來源、現象、類別、嚴重度、處置、狀態、版本、開關）。改完一定重跑兩組測試（目前 **117 + 97**）並截圖目視。
+
+### 0.4 效能現況與可再做的事
+
+- 已做：Worker 解析（dense、無格式文字）；縮圖點數抽樣（BSL 700／CIP 900，統計用全部）；矩陣縮圖排隊；凸顯／改色用 Plotly.react；相關圖抽樣 4000／3000；Plotly 改 cartesian 子集（6.3 → 3.1 MB）。
+- 量測（31k 列、21 item、4 組）：載入 6–8 s（解析 ≈ 4 s 在背景）、Trend 矩陣第一張 0.4–0.8 s、20 張 4 s、Quantile 20 張 3 s；PPT 排排站 21 頁 ≈ 2–3 分鐘（每張 PNG 0.42 s：newPlot 0.14 ＋ toImage 0.27）。
+- 待做（效益由大到小）：① 排排站列圖改自製 canvas 繪圖（估每張 < 20 ms，PPT 匯出從分鐘級降到秒級）；② `E.compute`＋前處理掃描搬到 Worker（目前主執行緒 ≈ 2 s）；③ app.js 以 terser 壓縮（220 KB → ≈110 KB，對 3.1 MB 影響小，且不利除錯，暫不做）；④ xlsx 換 mini 版可再省 0.5 MB 但會失去舊版 .xls，暫不做。
+
+### 0.5 待辦（使用者已知、尚未排程）
+
+- 匯出按鈕兩個在窄螢幕會把表頭擠成兩行 → 改成一個下拉。
+- Condition 列超過 4 個條件時門檻列換行；色點 hover 放大。
+- Inline 變異頁摘要去重；3×3 格高受摘要列擠壓。
+- 延後項目（使用者決定）：CUSUM 變化點、證據等級、time-aligned／campaign BSL、vs 上次戰報、P3 結案回饋。
+
+### 0.6 測試資料對照（`sample_data/variants/`）
+
+| 檔案 | 用途 |
+|---|---|
+| `I_trap.xlsx`、`J_fabrun.xlsx` | 重複 wafer、單位差 1000、文字日期、campaign 尾巴（前處理） |
+| `K_sixcond.xlsx` | BSL＋5 CIP（條件樣式、凸顯、拖曳） |
+| `H_longnames.xlsx` | 長條件名（PPT K 表寬度） |
+| `L_pp5.xlsx`、`M_pp10.xlsx`、`N_pp30k.xlsx` | 4 型號 × A廠／B廠、5+5／10+10 item、31k 列（排排站、quantile、效能、SPA） |
+| `O_wat15.xlsx` | 單一 CIP、無分組、15 WAT＋SPA 固定值（點燈表字級自適應、SPA 灰燈） |
+| `P_items100.csv`、`R_10k.csv`、`Q_100k.csv` | 100 item 畫廊欄數研究；1 萬／10 萬片 x 軸刻度；CSV 匯入 |
 
 ---
 
@@ -26,7 +92,7 @@
 | 7 | 盡量**不用滾輪上下捲動**；6 產品 × 6 層這種大表也不能擁擠 | 戰報做成儀表板：左邊點燈表，右邊 HL 清單加詳細；點燈表依欄數自動切換標準／緊湊／熱圖密度（`pickDensity`），太寬時改為上下堆疊；提供只看異常、層別、類別收合、HL 篩選 |
 | 8 | 圖可以**彈出浮動視窗**放大、縮放，**同時開多個**比對 | 非 modal 視窗管理器 |
 | 9 | 匯出 **HTML 與 PPT** | PPT 包含：WAT 點燈表／HL trend／總覽 trend，以及 Inline 的同樣三項 |
-| 10 | GitHub **暫不推送** | 只在本機 git commit |
+| 10 | GitHub 從雲端 **推不上去（403）** | 本機 git commit ＋ 產出 git bundle 到 `Claude outputs\`，使用者自行 pull／push |
 
 ---
 
@@ -76,8 +142,8 @@
 
 ```
 BEOL_Analysis/
-├─ BEOL_Report.html         ← 成品，離線完整版（約 6.1 MB，內含 Plotly、SheetJS、PptxGenJS）
-├─ BEOL_Report_lite.html    ← 成品，lite 版（約 0.17 MB，程式庫由 cdn.jsdelivr.net 載入）
+├─ BEOL_Report.html         ← 成品，離線完整版（約 3.1 MB，內含 Plotly cartesian、SheetJS、PptxGenJS）
+├─ BEOL_Report_lite.html    ← 成品，lite 版（約 0.39 MB，程式庫由 cdn.jsdelivr.net 載入）
 ├─ make_BEOL_Analysis.py    ← 單一 Python 產生器（約 2 MB，可離線）；_lite.py 約 0.12 MB
 ├─ build.py                 ← 把 src/ 打包成上面兩個 HTML（輸出到根目錄）
 ├─ src/
@@ -88,7 +154,7 @@ BEOL_Analysis/
 │  ├─ report/engine.js      ← 資料準備、自動設定、計算、摘要文字（App.rptEngine）
 │  ├─ report/app.js         ← UI：設定、戰報、Trend 矩陣、Correlation、視窗、匯出（App.rpt、App.rptUI）
 │  └─ js/core.js importer.js transform.js stats.js   ← 與 ProcessDataTool 共用：讀檔、長寬表轉換、統計
-├─ vendor/                  ← plotly 2.35.3、xlsx 0.18.5、pptxgenjs 3.12.0
+├─ vendor/                  ← plotly-cartesian 2.35.3（報表用；ProcessDataTool 仍用完整版 plotly.min.js）、xlsx 0.18.5、pptxgenjs 3.12.0
 ├─ docs/BEOL_REPORT.md      ← 設計說明（給人看）；docs/ROADMAP.md 路線；docs/REFERENCES.md 文獻
 ├─ sample_data/             ← gen_*.py 範例資料產生器（numpy／pandas／openpyxl）與產出的檔案
 └─ tests/                   ← Playwright 端對端測試，參考值用 pandas 獨立計算
@@ -138,8 +204,8 @@ File → E.load()（importer 讀檔 → transform.buildDatasets）
 ```bash
 python build.py                          # 產生 BEOL_Report.html 與 _lite.html
 python sample_data/gen_wat_fab.py        # 其他產生器：gen_inline_fab、gen_variants、gen_beol＋write_xlsx_single
-node tests/e2e_report.js                 # 49 項：WAT／Inline 數值與 pandas 比對、儀表板、分組切換、視窗、矩陣、HTML／PPT 匯出
-node tests/e2e_variants.js               # 21 項：沒為工具設計過的資料（CSV、不同欄名、三個條件、長表、單一條件）
+node tests/e2e_report.js                 # 97 項：WAT／Inline 數值與 pandas 比對、儀表板、分組切換、視窗、矩陣、HTML／PPT 匯出
+node tests/e2e_variants.js               # 117 項：沒為工具設計過的資料（CSV、不同欄名、三個條件、長表、單一條件）
 ```
 
 - `tests/e2e_report.js` 現在也涵蓋疑似因子（V12_ETCH_CH 命中、M12_CMP_Tool 混淆）、Yield 模組、知識庫頁編輯與 Excel 來回匯入。
@@ -166,7 +232,9 @@ node tests/e2e_variants.js               # 21 項：沒為工具設計過的資�
 - v1.0：WAT 戰報（K-shift、點燈表、診斷、Trend、Correlation、HTML 匯出）
 - v2.0：改名 BEOL；LK 改用倍數＋log 軸；SPA 改用固定值異常比例；新增 Inline 模組（均值、W2W、WIW、徑向分布、對 WAT 的影響）
 - v2.1：點燈格只顯示數字；戰報頁可切換分組、比較欄、BSL、CIP；儀表板版面；Trend 矩陣；浮動視窗；PPT 匯出；強化不同欄名的解析；單一 Python 產生器
-- v3.11：移除資料品質列（頁面／HTML／PPT 結論／summaryText）、Condition 列固定值說明、summary 燈號行；`E.dataQualityLines` 保留但無人呼叫（可刪）
+- v3.13：Plotly 改 cartesian 子集（HTML 6.3 → 3.1 MB；`build.py`／`beol/build.py` CDN 表、`report.html` INLINE、`pack_beol.py`）；移除無人呼叫的 `E.dataQualityLines`、`figCache`、`HI_DIM`；前處理極端值圖抽樣 3000 點改 SVG
+- v3.12：`jmpGuard`（.jmp 提示）、accept 加 .tsv/.txt/.jmp；色盤 input 預覽／change 套用＋「套用」鈕；`seqTicks(ord, k)` 刻度吸附排序欄變化點；Trend 矩陣單組畫廊 `S.trend.cols`（store `rpt-trend-cols`）、`opts.dense`；`gen_scale.py`
+- v3.11：移除資料品質列（頁面／HTML／PPT 結論／summaryText）、Condition 列固定值說明、summary 燈號行
 - v3.10：相關圖全 SVG（無 scattergl）；`lightTables` 的 `fit()`（字級／邊距／每列高度）＋ `paginate()` 依實際列高；固定值 item `cell.failC`／`failB`，綠 =target、灰 n片≠target，無 HL；quantile 右側只有 K；單欄頁整頁寬
 - v3.9：點無白邊／透明；凸顯改 `tint()` 淡色（`visData`）；排排站 `frame(title, { comment })` comment 框＋`legendInline`；quantile 列 `maxRows: 5, aspect: 2`，窄圖時標註移到右側文字
 - v3.8：Quantile plot（`E.quantile`／`E.probit`，`qStats`／`qFig`／`renderQuantile`，`#tab-quant`，`S.qt`）取代 P-chart；`lightTables()` 共用；`sortLayer`／`layerKey`；匯入進度 `progress()`（importer `readFile(file, onStage)` Web Worker 解析）；`queuePlot` 縮圖排隊；`dataChecks` 依 pairs 列同層、鄰層限知識庫；固定值常數欄保留；機台視窗刪出現期間、confound 無註解
@@ -204,5 +272,5 @@ node tests/e2e_variants.js               # 21 項：沒為工具設計過的資�
 ### 交付位置與慣例
 - 使用者電腦：`C:\Claude_project\Data analysis工具\BEOL_Analysis\`，由 Cowork 的 device bridge 寫入。
 - claude.ai Project「半導體製程整合」：放原始碼與 lite 版；**不要放 6 MB 的完整版 HTML**（Project 有容量上限）。
-- Git：只 commit，**不 push**（使用者要求先不用 GitHub）。
+- Git：本機 commit ＋ `git bundle create Data-analysis-tool_vX.Y.bundle --all`，交付到 `Claude outputs\`（雲端 push 會 403）。
 - 介面文字一律用**繁體中文**；數字的負號用「−」（U+2212）；報告色系固定：深藍 `#1f3b63`、綠 `#1e8e4e`、黃 `#a86b00`、橘 `#d4580f`、灰 `#98a2b3`。
