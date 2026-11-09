@@ -173,11 +173,12 @@
   };
 
   /** classify a column → { cat, conf } ; conf 0..1 */
-  R.classify = (name) => {
+  R.classify = (name, kind) => {   // v3.14: optional kind restricts the search to one module (user dragged the item into WAT／Inline／Yield)
     const { short, unit } = R.parseName(name);
-    let best = { cat: 'other', conf: 0.2 };
+    const otherOf = { wat: 'other', inline: 'other_inline', yield: 'other_yield' };
+    let best = { cat: otherOf[kind] || 'other', conf: 0.2 };
     for (const c of R.CATS) {
-      if (/^other/.test(c.id)) continue;
+      if (/^other/.test(c.id) || (kind && c.kind !== kind)) continue;
       const n = c.name && c.name.test(short), u = c.unit && unit && c.unit.test(unit);
       const conf = n && u ? 0.95 : n ? 0.75 : u ? 0.5 : 0;
       if (conf > best.conf) best = { cat: c.id, conf };

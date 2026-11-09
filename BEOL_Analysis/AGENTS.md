@@ -1,20 +1,21 @@
 # BEOL_Analysis：Agent 接手文件
 
 > 給接手的 AI agent（或工程師）閱讀。讀完這份就能繼續開發，不必回頭看對話紀錄。
-> 版本：BEOL 分析戰報 **v3.13**（2026-11-09）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
+> 版本：BEOL 分析戰報 **v3.14**（2026-11-10）。P1、P2 完成；**P3 結案回饋暫緩**（使用者決定）。主線：分析與戰報產出、使用者只提供資料的體驗。
 
 ---
 
-## 0. 接手摘要（Update summary，2026-11-09 整理）
+## 0. 接手摘要（Update summary，2026-11-10 整理）
 
 > 這一節是「接續記憶」用：另一個對話或另一個 AI 工具讀完這節，就知道現在系統長什麼樣、哪些是使用者定案不能改、哪些還沒做。細節再往下翻。
 
-### 0.1 現在的系統（v3.13）一眼看完
+### 0.1 現在的系統（v3.14）一眼看完
 
 | 面向 | 現況 |
 |---|---|
 | 成品 | `BEOL_Report.html`（離線完整版 **3.1 MB**，v3.13 起 Plotly 改用 cartesian 子集）、`BEOL_Report_lite.html`（0.39 MB，程式庫走 cdn.jsdelivr.net）、`make_BEOL_Analysis(_lite).py` 單一 Python 產生器可展開整個專案 |
 | 匯入 | Excel（xlsx／xls／xlsm）、CSV／TSV／TXT；寬表（by wafer）與長表（by site）；欄名不固定靠自動判斷；`.jmp` 不能直接讀（二進位），匯入時提示用 JMP 匯出 CSV（附 JSL 一行）。解析在 **Web Worker**，六段進度條（讀取→解析→整理→判斷欄位→統計→畫戰報）；31k 列 6–8 s、100k 列 CSV 6.3 s |
+| 設定頁 ⚙ 量測項目 | v3.14：整張卡片可點（勾選／取消）、Ctrl／Shift＋點與空白處**框選**多張、底部批次列（勾選／取消／移到 WAT·Inline·Yield）、卡片可**拖曳**（含整個選取）到其他群組改類別（`RU.classify(name, kind)` 限定模組重判，信心低仍標「請確認類別」）；空群組為虛線放置區 |
 | 前處理分頁 ⓪ | 重複 wafer（保留／平均／第一筆／刪除）、單位不同（×10ⁿ 一鍵換算）、極端值（MAD |z|>6，尾巴規則只提示不標）——系統提示、使用者確認 |
 | 戰報總覽 ① | 左點燈表（自動／標準／緊湊／熱圖）、右 HL 清單＋細節（trend、同層相關圖、建議檢查）。燈號：K 類 σ、LK 倍數（log）、**固定值類（SPA）＝全部等於固定值 → 綠「=20」，有 wafer 偏離 → 灰「n片≠20」交工程師判讀，永遠不是 HL** |
 | 建議檢查 | 知識庫**預設關**：只列資料能互相對照的項目——依 item 的 pairs 列同層對應 inline（Rs → THK＋metal CD、Rc → via CD、LK → CD），資料沒有該欄仍列為「○ 缺資料」；同組 yield；機台／chamber（只給路線，不下評語）。**鄰層（跨層）只在知識庫開啟時出現**。每列 🔍 開檢查視窗（相關圖、上下兩面板共振 trend）或機台視窗 |
@@ -185,7 +186,7 @@ File → E.load()（importer 讀檔 → transform.buildDatasets）
 | 區塊 | 函式 |
 |---|---|
 | 模組切換 | `renderMods`, `setMode`（`S.mode` = 'wat'／'inline'） |
-| 設定頁 | `renderSetup`（欄位、類別下拉選單、粒度 by wafer／by site） |
+| 設定頁 | `renderSetup`（欄位、類別下拉選單、粒度 by wafer／by site）；`bindItemCards(host, c)`（v3.14：整卡點選、Ctrl／Shift 選取、marquee 框選 `#iMarq`、批次列 `#iBulk`、HTML5 拖曳到 `.igroup[data-kind]` → `moveTo`）；選取集 `itemSel` 跨重繪保留、換檔清空 |
 | 戰報儀表板 | `renderReport` → `ctrlBar`（分組欄、比較欄、BSL、CIP，改了即重算）＋ `pickDensity` / `lightTable(kind, view, dens)`（含列篩選 `S.rowf`、類別收合 `S.collapsed`、欄位異常數 footer）＋ HL 清單（`S.hlf` 篩選）`selectHL` → `renderHL`；`.dash.stack` 與 `.pane.hl.narrow` 依寬度切換 |
 | 疑似因子 | `factors`（快取）、`factorHtml`（HL 面板表格，含 ΔK）、`factorVerdict`（一句話，進純文字／HTML／PPT）|
 | 引導式檢查 | `checkHint(f, text)`：以關鍵字把每條建議檢查對應到 ok／need／nav／ext 與一個動作（開相關圖、機台分析、連結檔案、切模組） |
@@ -204,6 +205,7 @@ File → E.load()（importer 讀檔 → transform.buildDatasets）
 ```bash
 python build.py                          # 產生 BEOL_Report.html 與 _lite.html
 python sample_data/gen_wat_fab.py        # 其他產生器：gen_inline_fab、gen_variants、gen_beol＋write_xlsx_single
+node tests/shot_items.js                 # v3.14 設定頁卡片互動＋截圖（tests/shots/）
 node tests/e2e_report.js                 # 97 項：WAT／Inline 數值與 pandas 比對、儀表板、分組切換、視窗、矩陣、HTML／PPT 匯出
 node tests/e2e_variants.js               # 117 項：沒為工具設計過的資料（CSV、不同欄名、三個條件、長表、單一條件）
 ```
@@ -212,7 +214,7 @@ node tests/e2e_variants.js               # 117 項：沒為工具設計過的資
 - 測試需要 Node、Playwright 和 Python（pandas、python-pptx）。在 Anthropic 的雲端沙箱中，用 `NODE_PATH=/home/claude/.npm-global/lib/node_modules node tests/xxx.js`，Chromium 在 `/opt/pw-browsers`。
 - **改完程式一定要重跑兩組測試，並截圖目視檢查版面**（使用者很在意版面）。
 - 測試用 `App.rptUI` 和 `App.rpt.res` 取值；參考值由 `tests/expected_beol.py` 或測試裡的 inline pandas 計算，**不要把數值寫死**。
-- 更新單一 Python 產生器：在原始開發 repo（pdat）執行 `python tools/pack_beol.py`，產出 `dist/make_BEOL_Analysis(_lite).py`。打包清單是 `tools/pack_beol.py` 裡的 `FILES`；新增檔案要加進清單。
+- 更新單一 Python 產生器：在原始開發 repo（pdat）或**直接在 BEOL_Analysis 資料夾**執行 `python tools/pack_beol.py`（v3.14 起沒有 `beol/` 子資料夾時來源＝目的路徑），產出 `dist/make_BEOL_Analysis(_lite).py`，再複製到根目錄。打包清單是 `tools/pack_beol.py` 裡的 `FILES`／`VENDOR`；新增檔案要加進清單；**vendor 清單必須與 `src/report.html` 的 INLINE 一致**——v3.13 曾因 `build.py` 要求 CDN 表全部 4 檔（含已不用的 `plotly.min.js`）而讓產生器只建出 lite 版（v3.14 修正：只檢查 report.html 實際引用的檔）。
 
 ### 範例資料裡埋的故事（測試依賴這些設定）
 
@@ -232,6 +234,7 @@ node tests/e2e_variants.js               # 117 項：沒為工具設計過的資
 - v1.0：WAT 戰報（K-shift、點燈表、診斷、Trend、Correlation、HTML 匯出）
 - v2.0：改名 BEOL；LK 改用倍數＋log 軸；SPA 改用固定值異常比例；新增 Inline 模組（均值、W2W、WIW、徑向分布、對 WAT 的影響）
 - v2.1：點燈格只顯示數字；戰報頁可切換分組、比較欄、BSL、CIP；儀表板版面；Trend 矩陣；浮動視窗；PPT 匯出；強化不同欄名的解析；單一 Python 產生器
+- v3.14：build.py vendor 檢查改依 report.html 實際 INLINE（修產生器只建 lite 版、cp950 亂碼→UTF-8）；pack_beol 可在 BEOL_Analysis 內執行；設定頁 item 卡片整卡點選／框選／批次列／拖曳改類別（`bindItemCards`、`itemSel`、`RU.classify(name, kind)`）；`tests/shot_items.js`
 - v3.13：Plotly 改 cartesian 子集（HTML 6.3 → 3.1 MB；`build.py`／`beol/build.py` CDN 表、`report.html` INLINE、`pack_beol.py`）；移除無人呼叫的 `E.dataQualityLines`、`figCache`、`HI_DIM`；前處理極端值圖抽樣 3000 點改 SVG
 - v3.12：`jmpGuard`（.jmp 提示）、accept 加 .tsv/.txt/.jmp；色盤 input 預覽／change 套用＋「套用」鈕；`seqTicks(ord, k)` 刻度吸附排序欄變化點；Trend 矩陣單組畫廊 `S.trend.cols`（store `rpt-trend-cols`）、`opts.dense`；`gen_scale.py`
 - v3.11：移除資料品質列（頁面／HTML／PPT 結論／summaryText）、Condition 列固定值說明、summary 燈號行
@@ -271,6 +274,6 @@ node tests/e2e_variants.js               # 117 項：沒為工具設計過的資
 
 ### 交付位置與慣例
 - 使用者電腦：`C:\Claude_project\Data analysis工具\BEOL_Analysis\`，由 Cowork 的 device bridge 寫入。
-- claude.ai Project「半導體製程整合」：放原始碼與 lite 版；**不要放 6 MB 的完整版 HTML**（Project 有容量上限）。
+- claude.ai Project「半導體製程整合」：放原始碼與 lite 版；**不要放 6 MB 的完整版 HTML**（Project 有容量上限）。**以使用者電腦的資料夾為準**：Project 內的大檔（`pdat/src/report/app.js`、`pdat/dist/BEOL_Report_lite.html`、`pdat/dist/make_BEOL_Analysis_lite.py`、`pdat/docs/build_review_log.py`）在 v3.14 未能同步（工具限制：整檔需一次讀完才能覆寫），仍是 v3.13；接手時請從使用者電腦 stage 最新檔，或用 `python tools/pack_beol.py` 重新產生 dist。
 - Git：本機 commit ＋ `git bundle create Data-analysis-tool_vX.Y.bundle --all`，交付到 `Claude outputs\`（雲端 push 會 403）。
 - 介面文字一律用**繁體中文**；數字的負號用「−」（U+2212）；報告色系固定：深藍 `#1f3b63`、綠 `#1e8e4e`、黃 `#a86b00`、橘 `#d4580f`、灰 `#98a2b3`。

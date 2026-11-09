@@ -21,6 +21,13 @@ CDN = {
 }
 
 
+def vendor_needed(entry="report.html"):
+    """vendor files the template actually inlines (v3.14: the check used to require every CDN entry,
+    so a vendor/ without the superseded full plotly.min.js was wrongly treated as incomplete)"""
+    tpl = (SRC / entry).read_text(encoding="utf-8")
+    return [m.strip() for m in PAT.findall(tpl) if m.strip() in CDN]
+
+
 def build(lite=False, entry="report.html", name="BEOL_Report"):
     tpl = (SRC / entry).read_text(encoding="utf-8")
 
@@ -40,10 +47,14 @@ def build(lite=False, entry="report.html", name="BEOL_Report"):
 
 
 if __name__ == "__main__":
-    have_vendor = all((SRC / rel).resolve().exists() for rel in CDN)
+    try:  # Windows console may be cp950: never let a message crash or garble the build
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    missing = [rel for rel in vendor_needed() if not (SRC / rel).resolve().exists()]
     if "--lite" not in sys.argv:
-        if have_vendor:
+        if not missing:
             build()
         else:
-            print("vendor/ 不完整，略過離線完整版；只產生 lite 版（需要能連到 cdn.jsdelivr.net）")
+            print("vendor/ 缺少 " + "、".join(pathlib.Path(r).name for r in missing) + "，略過離線完整版；只產生 lite 版（需要能連到 cdn.jsdelivr.net）")
     build(lite=True)

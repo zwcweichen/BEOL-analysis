@@ -12,6 +12,12 @@ import base64, hashlib, lzma, pathlib, datetime, textwrap
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 DIST = REPO / "dist"
+# v3.14: also runnable from inside a deployed BEOL_Analysis folder (no beol/ sub-folder, AGENTS.md etc. at the root)
+FLAT = not (REPO / "beol").is_dir()
+
+
+def src_of(dst, src):
+    return dst if FLAT else src
 
 # destination inside BEOL_Analysis  ->  source in this repo
 FILES = {
@@ -52,6 +58,8 @@ FILES = {
     "sample_data/write_xlsx_single.py": "sample_data/write_xlsx_single.py",
     "tests/e2e_report.js": "tests/e2e_report.js",
     "tests/e2e_variants.js": "tests/e2e_variants.js",
+    "tests/shot_items.js": "tests/shot_items.js",
+    "tools/pack_beol.py": "tools/pack_beol.py",
     "tests/expected_beol.py": "tests/expected_beol.py",
     "tests/audit_cells.py": "tests/audit_cells.py",
 }
@@ -101,6 +109,13 @@ GENERATORS = [  # (script, extra env) — run in this order, only when numpy/pan
 ]
 
 
+ENV = {{**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}}   # child scripts print UTF-8 even on a cp950 console
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
+
 def say(msg):
     try:
         print(msg, flush=True)
@@ -136,7 +151,7 @@ def main():
     say(f"  已寫出 {{len(FILES)}} 個檔案，檢查碼全部正確")
 
     # ---- build the HTML tools
-    r = subprocess.run([sys.executable, "build.py"], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    r = subprocess.run([sys.executable, "build.py"], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace", env=ENV)
     say("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()))
     if r.returncode:
         say("  HTML 打包失敗：\n" + r.stderr)
@@ -154,7 +169,7 @@ def main():
             say(f"  略過範例資料：缺少 {{e.name}}（pip install numpy pandas openpyxl 後可重跑 sample_data 內的 gen_*.py）")
         if ok:
             for script, env in GENERATORS:
-                rr = subprocess.run([sys.executable, script], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace", env={{**os.environ, **env}})
+                rr = subprocess.run([sys.executable, script], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace", env={{**ENV, **env}})
                 say(f"  {{'OK ' if rr.returncode == 0 else 'NG '}} {{script}}" + ("" if rr.returncode == 0 else "\n" + rr.stderr[-600:]))
             pkl = os.path.join(target, "sample_data", "beol.pkl")
             if os.path.exists(pkl):
@@ -177,7 +192,7 @@ def entry(rel, data):
 
 def pack(with_vendor):
     files = dict(FILES, **(VENDOR if with_vendor else {}))
-    entries = "\n".join(entry(dst, (REPO / src).read_bytes()) for dst, src in files.items())
+    entries = "\n".join(entry(dst, (REPO / src_of(dst, src)).read_bytes()) for dst, src in files.items())
     version = (REPO / "src/report/app.js").read_text(encoding="utf-8").split("App.VERSION = '")[1].split("'")[0]
     name = "make_BEOL_Analysis.py" if with_vendor else "make_BEOL_Analysis_lite.py"
     out = TEMPLATE.format(

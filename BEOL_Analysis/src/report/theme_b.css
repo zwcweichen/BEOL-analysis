@@ -57,6 +57,7 @@ main { padding: 0 22px 40px; }
 .hint { font-size: 12px; }
 .items-grid { gap: 10px; }
 .icard { border-radius: 6px; border-left: 3px solid var(--line); }
+.icard.sel { border-left-color: var(--blue); }
 .icard .t { font-size: 13px; }
 .go .btn.primary { min-height: 40px; padding: 0 22px; font-size: 14px; }
 .drop { border: 2px dashed #B8C0CC; border-radius: 8px; background: #fff; padding: 56px 20px; }

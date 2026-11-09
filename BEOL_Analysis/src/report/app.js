@@ -8,7 +8,7 @@
   const E = App.rptEngine, RU = App.rules;
   const S = (App.rpt = { file: '', src: null, dsRaw: null, ds: null, siteDs: [], links: [], cfg: null, res: null, siteLevel: false, grain: 'wafer', mode: 'wat',
     hl: { wat: 0, inline: 0 }, ov: 'mean', dens: 'auto', rowf: { abn: false, layers: [] }, hlf: { lv: 'all', group: '' }, collapsed: new Set(), trend: { mode: 'abn', x: 'seq', by: '' }, corr: { y: null, x: null, group: '全部' }, qt: { mode: 'abn' } });
-  App.VERSION = '3.13';
+  App.VERSION = '3.14';
   /** 知識庫建議開關（預設關）：關 = 建議檢查只列資料能互相對照的 item（同層／鄰層 inline、WAT、yield、機台），不給物理原因；開 = 加上知識庫的檢查與機制 */
   S.kbOn = !!App.store.get('rpt-kb-on', false);
   const $ = (id) => document.getElementById(id);
@@ -192,7 +192,7 @@
       await progress('config', null, file);
       S.file = file.name; S._file = file; S.src = src; S.dsRaw = ds; S.siteDs = siteDs; S.links = []; S.prep = E.prepDefault(); S.prepItem = null;
       $('btnLink').disabled = false;
-      S.cfg = E.autoConfig(ds);
+      S.cfg = E.autoConfig(ds); itemSel.clear();
       S.mode = S.cfg.mode;
       S.siteLevel = E.dupRatio(ds, S.cfg.waferCol) > 1.5;
       if (S.siteLevel && !siteDs.length) S.siteDs = [ds];      // wide by-site table → within-wafer stats from the table itself
@@ -406,13 +406,17 @@
     const condVals = c.condCol ? Object.keys(c.condCounts || {}) : [];
     const wat = c.items.filter((i) => i.kind === 'wat'), inl = c.items.filter((i) => i.kind === 'inline'), yld = c.items.filter((i) => i.kind === 'yield');
     const catOpts = (cur) => ['wat', 'inline', 'yield'].map((k) => `<optgroup label="${{ wat: 'WAT 電性', inline: 'Inline 量測', yield: 'Yield／CP' }[k]}">${RU.CATS.filter((x) => x.kind === k).map((x) => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</optgroup>`).join('');
+    itemSel.forEach((n) => { if (!c.items.some((i) => i.name === n)) itemSel.delete(n); });
     const card = (it) => {
       const L = RU.layer(it.name);
-      return `<div class="icard ${it.on ? '' : 'off'} ${it.conf < 0.7 ? 'low' : ''}" data-it="${esc(it.name)}">
+      return `<div class="icard ${it.on ? '' : 'off'} ${it.conf < 0.7 ? 'low' : ''} ${itemSel.has(it.name) ? 'sel' : ''}" data-it="${esc(it.name)}" draggable="true" title="點一下勾選／取消；Ctrl＋點選取多張；拖曳到其他群組可改類別">
         <div class="t"><input type="checkbox" data-on ${it.on ? 'checked' : ''}>${esc(short(it.name))}${L ? `<span class="tag layer">${L}</span>` : ''}${metricTag(it)}${it.linked ? `<span class="tag lnk" title="${esc(it.linked)}">連結</span>` : ''}${it.conf < 0.7 ? '<span class="tag warn">請確認類別</span>' : ''}</div>
         <div class="u">${esc(unit(it.name) || '（無單位）')} · N ${it.n.toLocaleString()}</div>
         <select data-cat>${catOpts(it.cat)}</select></div>`;
     };
+    const KIND_LAB = { wat: 'WAT', inline: 'Inline', yield: 'Yield／CP' };
+    const group = (kind, list, empty) => `<div class="igroup" data-kind="${kind}"><div class="lab">${KIND_LAB[kind]}<span class="muted small">${list.length} 項${list.length ? `，已勾選 ${list.filter((i) => i.on).length}` : ''}</span></div>
+        <div class="items-grid" data-kind="${kind}">${list.map(card).join('') || `<div class="empty">${empty}</div>`}</div></div>`;
     const vm = validMsg();
     const nSite = S.siteDs.reduce((a, d) => a + d.rows.length, 0);
     host.innerHTML = `<div class="setup-grid">
@@ -438,15 +442,16 @@
         <div class="frow"><label>CIP 條件 *</label><div class="cips">${condVals.filter((v) => v !== c.baseline).map((v) => `<label><input type="checkbox" data-cip="${esc(v)}" ${c.cips.includes(v) ? 'checked' : ''}>${esc(v)} <span class="muted small">(${c.condCounts[v]})</span></label>`).join('') || '<span class="muted">—</span>'}</div></div>
 
       </div></div>
-      <div class="sec" style="margin-top:20px"><h3><em>4</em>量測項目</h3>
+      <div class="sec items-sec" id="itemsSec" style="margin-top:20px"><h3><em>4</em>量測項目</h3>
         <div class="items-bar"><a href="#" data-all="1">全選</a><a href="#" data-all="0">全不選</a>
           <input type="text" id="sFilter" placeholder="篩選欄名…" style="width:180px">
-          <span class="muted small">WAT ${wat.length} · Inline ${inl.length}${yld.length ? ` · Yield ${yld.length}` : ''}</span></div>
-        <div class="lab" style="margin:6px 0">WAT</div>
-        <div class="items-grid">${wat.map(card).join('') || '<span class="muted small">沒有偵測到 WAT item</span>'}</div>
-        <div class="lab" style="margin:14px 0 6px">Inline</div>
-        <div class="items-grid">${inl.map(card).join('') || '<span class="muted small">沒有 inline 欄位</span>'}</div>
-        ${yld.length ? `<div class="lab" style="margin:14px 0 6px">Yield／CP</div><div class="items-grid">${yld.map(card).join('')}</div>` : ''}
+          <span class="muted small">WAT ${wat.length} · Inline ${inl.length}${yld.length ? ` · Yield ${yld.length}` : ''}</span>
+          <span class="muted small ux">點卡片勾選／取消 · 空白處拖曳框選 · 拖曳卡片到其他群組改類別</span></div>
+        ${group('wat', wat, '沒有偵測到 WAT item — 可把卡片拖到這裡')}
+        ${group('inline', inl, '沒有 inline 欄位 — 可把卡片拖到這裡')}
+        ${group('yield', yld, '沒有 yield／bin 欄位 — 可把卡片拖到這裡')}
+        <div class="bulk" id="iBulk" hidden><b></b><button class="btn" data-bulk="on">勾選</button><button class="btn" data-bulk="off">取消勾選</button><i class="sep"></i><span>移到</span>${['wat', 'inline', 'yield'].map((k) => `<button class="btn" data-move="${k}">${KIND_LAB[k]}</button>`).join('')}<i class="sep"></i><button class="btn" data-bulk="clear">取消選取</button></div>
+        <div class="marquee" id="iMarq" hidden></div>
       </div>
       <div class="go"><button class="btn primary" id="sGo">產生戰報 →</button><span class="${vm ? '' : 'muted'} small" style="color:${vm ? 'var(--o)' : ''}">${esc(vm || '設定完成')}</span></div>`;
     $('sSheet').onchange = (e) => loadFile(S._file, e.target.value);
@@ -468,13 +473,87 @@
       const q = e.target.value.toLowerCase();
       host.querySelectorAll('.icard').forEach((el) => (el.style.display = !q || el.dataset.it.toLowerCase().includes(q) ? '' : 'none'));
     };
-    host.querySelectorAll('.icard').forEach((el) => {
-      const it = c.items.find((i) => i.name === el.dataset.it);
-      el.querySelector('[data-on]').onchange = (e) => { it.on = e.target.checked; el.classList.toggle('off', !it.on); };
-      el.querySelector('[data-cat]').onchange = (e) => { it.cat = e.target.value; it.conf = 1; it.userCat = true; E.itemSetup(it, S.ds.rows); renderSetup(); };
-    });
+    bindItemCards(host, c);
     $('sGo').onclick = generate;
   }
+  // ---- v3.14 item cards: whole-card click toggles, Ctrl／Shift＋click and rubber-band (marquee) select, bulk bar, drag cards (incl. the selection) onto another group to re-classify
+  const itemSel = new Set();
+  let itemAnchor = null;
+  function bindItemCards(host, c) {
+    const sec = host.querySelector('#itemsSec'), bulk = host.querySelector('#iBulk'), marq = host.querySelector('#iMarq');
+    const byName = (n) => c.items.find((i) => i.name === n);
+    const cards = () => [...sec.querySelectorAll('.icard')];
+    const visible = (el) => el.style.display !== 'none';
+    const setOn = (it, el, on) => { it.on = on; el.classList.toggle('off', !on); el.querySelector('[data-on]').checked = on; refreshCounts(); };
+    const refreshCounts = () => sec.querySelectorAll('.igroup').forEach((g) => { const its = c.items.filter((i) => i.kind === g.dataset.kind); const s = g.querySelector('.lab .muted'); if (s) s.textContent = `${its.length} 項${its.length ? `，已勾選 ${its.filter((i) => i.on).length}` : ''}`; });
+    const paint = () => { cards().forEach((el) => el.classList.toggle('sel', itemSel.has(el.dataset.it))); bulk.hidden = !itemSel.size; bulk.querySelector('b').textContent = `已選 ${itemSel.size} 項`; };
+    const select = (names, mode) => { if (mode === 'set') itemSel.clear(); names.forEach((n) => (mode === 'toggle' && itemSel.has(n) ? itemSel.delete(n) : itemSel.add(n))); paint(); };
+    const moveTo = (names, kind) => {
+      let n = 0;
+      names.forEach((nm) => { const it = byName(nm); if (!it || it.kind === kind) return; const k = RU.classify(it.name, kind); it.cat = k.cat; it.conf = k.conf; it.userCat = true; E.itemSetup(it, S.ds.rows); n++; });   // keep the classifier's confidence so a weak match still shows「請確認類別」
+      if (n) { App.toast(`${n} 個 item 移到 ${{ wat: 'WAT', inline: 'Inline', yield: 'Yield' }[kind]}，類別已重新判斷，可再用下拉調整`); renderSetup(); }
+    };
+    cards().forEach((el) => {
+      const it = byName(el.dataset.it);
+      el.querySelector('[data-on]').onchange = (e) => setOn(it, el, e.target.checked);
+      el.querySelector('[data-cat]').onchange = (e) => { it.cat = e.target.value; it.conf = 1; it.userCat = true; E.itemSetup(it, S.ds.rows); renderSetup(); };
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('input, select, option, a, button')) return;
+        if (e.ctrlKey || e.metaKey) { select([it.name], 'toggle'); itemAnchor = it.name; return; }
+        if (e.shiftKey && itemAnchor) {
+          const vis = cards().filter(visible).map((x) => x.dataset.it), a = vis.indexOf(itemAnchor), b = vis.indexOf(it.name);
+          if (a >= 0 && b >= 0) { select(vis.slice(Math.min(a, b), Math.max(a, b) + 1), 'add'); return; }
+        }
+        itemAnchor = it.name;
+        if (itemSel.size > 1 && itemSel.has(it.name)) { const on = !it.on; itemSel.forEach((n) => { const x = byName(n), xe = sec.querySelector(`.icard[data-it="${CSS.escape(n)}"]`); if (x && xe) setOn(x, xe, on); }); return; }
+        setOn(it, el, !it.on);
+      });
+      // drag: the card alone, or the whole selection when the card is part of it
+      el.addEventListener('dragstart', (e) => {
+        if (e.target.closest('input, select')) { e.preventDefault(); return; }
+        const names = itemSel.has(it.name) ? [...itemSel] : [it.name];
+        dragItems = names; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', names.join('\n')); } catch (x) {}
+        names.forEach((n) => sec.querySelector(`.icard[data-it="${CSS.escape(n)}"]`)?.classList.add('drag'));
+        if (names.length > 1) { const ghost = document.createElement('div'); ghost.className = 'dghost'; ghost.textContent = `${names.length} 個 item`; document.body.appendChild(ghost); e.dataTransfer.setDragImage(ghost, 20, 14); setTimeout(() => ghost.remove(), 0); }
+      });
+      el.addEventListener('dragend', () => { dragItems = null; cards().forEach((x) => x.classList.remove('drag')); sec.querySelectorAll('.igroup.over').forEach((g) => g.classList.remove('over')); });
+    });
+    sec.querySelectorAll('.igroup').forEach((g) => {
+      g.addEventListener('dragover', (e) => { if (!dragItems) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; g.classList.add('over'); });
+      g.addEventListener('dragleave', (e) => { if (!g.contains(e.relatedTarget)) g.classList.remove('over'); });
+      g.addEventListener('drop', (e) => { if (!dragItems) return; e.preventDefault(); const names = dragItems; dragItems = null; g.classList.remove('over'); moveTo(names, g.dataset.kind); });
+    });
+    // rubber-band selection on empty space (pointer events; HTML5 drag handles the cards themselves)
+    sec.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.icard, input, select, a, button, .bulk, h3')) return;
+      const x0 = e.clientX, y0 = e.clientY, keep = e.ctrlKey || e.metaKey || e.shiftKey, base = keep ? new Set(itemSel) : new Set();
+      let live = false;
+      const rects = cards().filter(visible).map((el) => ({ el, r: el.getBoundingClientRect() }));
+      const move = (ev) => {
+        const dx = ev.clientX - x0, dy = ev.clientY - y0;
+        if (!live) { if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return; live = true; marq.hidden = false; document.body.classList.add('marquee-on'); }
+        const L = Math.min(x0, ev.clientX), T = Math.min(y0, ev.clientY), W = Math.abs(dx), H = Math.abs(dy);
+        Object.assign(marq.style, { left: `${L}px`, top: `${T}px`, width: `${W}px`, height: `${H}px` });
+        itemSel.clear(); base.forEach((n) => itemSel.add(n));
+        rects.forEach(({ el, r }) => { if (r.left < L + W && r.right > L && r.top < T + H && r.bottom > T) itemSel.add(el.dataset.it); });
+        paint();
+      };
+      const up = () => {
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+        marq.hidden = true; document.body.classList.remove('marquee-on');
+        if (!live && !keep) select([], 'set');   // plain click on empty space clears the selection
+      };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+    });
+    bulk.querySelectorAll('[data-bulk]').forEach((b) => (b.onclick = () => {
+      const k = b.dataset.bulk;
+      if (k === 'clear') { select([], 'set'); return; }
+      itemSel.forEach((n) => { const it = byName(n), el = sec.querySelector(`.icard[data-it="${CSS.escape(n)}"]`); if (it && el) setOn(it, el, k === 'on'); });
+    }));
+    bulk.querySelectorAll('[data-move]').forEach((b) => (b.onclick = () => moveTo([...itemSel], b.dataset.move)));
+    paint();
+  }
+  let dragItems = null;
 
   // ================================================================ light tables
   function cellTip(it, p, x) {
